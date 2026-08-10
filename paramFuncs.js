@@ -21,7 +21,7 @@ module.exports = {
 				fname = 'CLQL Parameters-1.txt'
 				break
 			case 'PM':
-				fname = 'Rivage Parameters-3.txt'
+				fname = 'Rivage Parameters-4.txt'
 				break
 			case 'TF':
 				fname = 'TF Parameters-1.txt'
