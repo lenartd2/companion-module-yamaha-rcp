@@ -808,6 +808,15 @@ added as remote `fork` (`origin` deliberately left pointing at `bitfocus/…` so
 keeps meaning "check upstream", not "check my fork"). Push there with `git push fork
 broadcast-studio`.
 
+**The Phase 1 migration was also offered upstream:**
+[bitfocus/companion-module-yamaha-rcp#76](https://github.com/bitfocus/companion-module-yamaha-rcp/pull/76),
+opened from a *separate* branch, `upstream-api21-migration` (based on `v3.6.0`, not
+`broadcast-studio` — deliberately built without ever touching this file in its history, since
+this doc has real network/studio detail that has no place in a public PR). That branch carries
+only the module source, `CHANGELOG.md` and `HELP.md`; if Phase 2+ work is also offered upstream
+later, repeat that pattern — cherry-pick or re-checkout the relevant source files onto a clean
+branch off whatever the PR's base should be, don't PR `broadcast-studio` directly.
+
 ### 10.2 Build
 
 ```bash
