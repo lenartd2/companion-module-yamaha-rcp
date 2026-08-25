@@ -798,9 +798,15 @@ cd YamahaRCP/companion-module-yamaha-rcp
 git log --oneline -3     # broadcast-studio, based on tag v3.6.0
 ```
 
-Branch `broadcast-studio` = `v3.6.0` + our probe tooling commit. Upstream `origin` is intact, so
-`git fetch origin` picks up any further maintainer work — worth checking periodically, since
-v3.6.0 was never released and may still change.
+Branch `broadcast-studio` = `v3.6.0` + our probe tooling commit + the Phase 1 API 2.1 migration
+(v3.7.0). Upstream `origin` is intact, so `git fetch origin` picks up any further maintainer
+work — worth checking periodically, since v3.6.0 was never released and may still change.
+
+As of Phase 1, `broadcast-studio` is also pushed to a personal fork,
+[lenartd2/companion-module-yamaha-rcp](https://github.com/lenartd2/companion-module-yamaha-rcp),
+added as remote `fork` (`origin` deliberately left pointing at `bitfocus/…` so `git fetch origin`
+keeps meaning "check upstream", not "check my fork"). Push there with `git push fork
+broadcast-studio`.
 
 ### 10.2 Build
 
