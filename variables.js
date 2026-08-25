@@ -106,7 +106,7 @@ module.exports = {
 			}
 		}
 
-		instance.setVariableDefinitions(instance.variables)
+		paramFuncs.setVariableDefinitions(instance)
 		instance.setVariableValues({
 			cuedStInChannels: '[]',
 			cuedInChannels: '[]',
@@ -256,7 +256,7 @@ module.exports = {
 		}
 	},
 
-	fbCreatesVar: (instance, cmd, data) => {
+	fbCreatesVar: (instance, cmd, data, context) => {
 		const wtMtrTable = require('./wtMtrTable.json')
 		const paramFuncs = require('./paramFuncs.js')
 		let rcpCmd = paramFuncs.findRcpCmd(cmd.Address)
@@ -290,7 +290,7 @@ module.exports = {
 			// Add new Auto-created variable and value
 			if (varIndex == -1) {
 				instance.variables.push(varToAdd)
-				instance.setVariableDefinitions(instance.variables)
+				paramFuncs.setVariableDefinitions(instance)
 			}
 			let value = {}
 			value[varName] = data
@@ -299,8 +299,18 @@ module.exports = {
 			const reg = /^@\(custom:([^)$]+)\)/
 			let hasCustomVar = reg.exec(cmd.Val)
 			if (hasCustomVar) {
-				// Set a custom variable value using @ syntax
-				instance.setCustomVariableValue(hasCustomVar[1], data)
+				// Set a custom variable value using @ syntax.
+				// Companion's module API only exposes this write from an action's context, not a
+				// feedback's, as of API 2.0 - there is no replacement for the feedback case.
+				if (context && typeof context.setCustomVariableValue === 'function') {
+					context.setCustomVariableValue(hasCustomVar[1], data)
+				} else if (!instance._loggedCustomVarFeedbackWarning) {
+					instance._loggedCustomVarFeedbackWarning = true
+					instance.log(
+						'warn',
+						'A feedback uses "@(custom:...)" in its Val option to write a custom variable. Companion no longer allows feedbacks to write custom variables (only actions can); this value will not be written.',
+					)
+				}
 			}
 		}
 	},

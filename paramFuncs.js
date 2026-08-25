@@ -50,16 +50,24 @@ module.exports = {
 			id: 'Fade',
 			tooltip:
 				'Recalling a scene from the console surface while Companion fades are running can cause unexpected fader movement. The module can cancel fades on scene changes, but avoid recalling scenes mid-fade where possible.',
-			default: 0,
+			default: '0',
+			// String ids, not numbers: pre-2.x Companion always coerced dropdown values to strings on
+			// save, so any button built before this migration already has a string stored here. Numeric
+			// ids would make every one of those buttons fail "value is not in the list of choices".
 			choices: [
-				{ id: 0, label: 'Off' },
-				{ id: 1, label: '1s' },
-				{ id: 2, label: '2s' },
-				{ id: 3, label: '3s' },
-				{ id: 5, label: '5s' },
-				{ id: 10, label: '10s' },
+				{ id: '0', label: 'Off' },
+				{ id: '1', label: '1s' },
+				{ id: '2', label: '2s' },
+				{ id: '3', label: '3s' },
+				{ id: '5', label: '5s' },
+				{ id: '10', label: '10s' },
 			],
 			minChoicesForSearch: 0,
+			// Tolerate an already-saved value that doesn't match a choice by type (e.g. a leftover
+			// number from before this field's ids were changed from numbers to strings) instead of
+			// failing "value is not in the list of choices" - allowCustom accepts anything, not just
+			// the listed choices, sidestepping the exact-type comparison entirely.
+			allowCustom: true,
 		}
 	},
 
@@ -99,6 +107,14 @@ module.exports = {
 	},
 
 	getFadeKey: (cmd) => `${cmd.Address}:${cmd.X ?? 0}:${cmd.Y ?? 0}`,
+
+	// setVariableDefinitions now expects an object keyed by variableId rather than an array;
+	// instance.variables stays an array internally since it's built up with push()/find().
+	setVariableDefinitions: (instance) => {
+		instance.setVariableDefinitions(
+			Object.fromEntries(instance.variables.map((v) => [v.variableId, { name: v.name }])),
+		)
+	},
 
 	cancelFade: (instance, cmd, startNextQueuedFade = true) => {
 		if (instance.fadeTimers == undefined || cmd == undefined) return
@@ -278,7 +294,7 @@ module.exports = {
 
 					case 'mtr':
 						params = RCP_METER_FIELDS
-						for (k = 3; k < line.length; k++) {
+						for (let k = 3; k < line.length; k++) {
 							params.push(k - 3)
 						}
 				}
@@ -366,20 +382,19 @@ module.exports = {
 	},
 
 	// Create the proper command string for an action or feedback
+	// Variable/expression substitution now happens in Companion itself (useVariables on the option
+	// fields) before this runs, so there is no longer any IPC round-trip here.
 	parseOptions: async (context, optionsToParse) => {
 		try {
 			let parsedOptions = JSON.parse(JSON.stringify(optionsToParse)) // Deep Clone
 
-			parsedOptions.X =
-				optionsToParse.X == undefined ? 0 : parseInt(await context.parseVariablesInString(String(optionsToParse.X))) - 1
-			parsedOptions.Y =
-				optionsToParse.Y == undefined ? 0 : parseInt(await context.parseVariablesInString(String(optionsToParse.Y))) - 1
+			parsedOptions.X = optionsToParse.X == undefined ? 0 : parseInt(optionsToParse.X) - 1
+			parsedOptions.Y = optionsToParse.Y == undefined ? 0 : parseInt(optionsToParse.Y) - 1
 
 			if (!Number.isInteger(parsedOptions.X) || !Number.isInteger(parsedOptions.Y)) return // Don't go any further if not Integers for X & Y
 			parsedOptions.X = Math.max(parsedOptions.X, 0)
 			parsedOptions.Y = Math.max(parsedOptions.Y, 0)
-			parsedOptions.Val = await context.parseVariablesInString(String(optionsToParse.Val ?? ''))
-			parsedOptions.Val = parsedOptions.Val === undefined ? '' : parsedOptions.Val
+			parsedOptions.Val = optionsToParse.Val === undefined ? '' : optionsToParse.Val
 
 			return parsedOptions
 		} catch (error) {

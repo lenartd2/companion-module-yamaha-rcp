@@ -2,6 +2,7 @@ node_modules
 *.code-workspace
 .vscode
 pkg.tgz
+*.tgz
 package-lock.json
 pkg
 .DS_Store

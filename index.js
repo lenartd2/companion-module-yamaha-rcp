@@ -2,7 +2,7 @@
 // Andrew Broughton <andy@checkcheckonetwo.com>
 // Aug 2025 Version 3.5.11 (for Companion v3/v4)
 
-const { InstanceBase, Regex, runEntrypoint, combineRgb, TCPHelper } = require('@companion-module/base')
+const { InstanceBase, Regex, InstanceStatus, combineRgb, TCPHelper } = require('@companion-module/base')
 
 const paramFuncs = require('./paramFuncs')
 const actionFuncs = require('./actions.js')
@@ -24,7 +24,7 @@ class instance extends InstanceBase {
 
 	// Startup
 	async init(cfg) {
-		this.updateStatus('Starting')
+		this.updateStatus(InstanceStatus.Connecting)
 		global.config = cfg
 		global.rcpCommands = []
 		this.colorCommands = [] // Commands which have a color field
@@ -43,7 +43,7 @@ class instance extends InstanceBase {
 
 	// Change in Configuration
 	async configUpdated(cfg) {
-		config = cfg
+		global.config = cfg
 		if (config.model) {
 			this.newConsole()
 		}
@@ -70,6 +70,9 @@ class instance extends InstanceBase {
 				label: 'Console/PreAmp Type',
 				width: 12,
 				default: 'CL/QL',
+				// Referenced by isVisibleExpression below - Companion only allows that for fields which
+				// can't themselves be switched to expression mode.
+				disableAutoExpression: true,
 				choices: [
 					{ id: 'CL/QL', label: 'CL/QL Console' },
 					{ id: 'PM', label: 'Rivage PM Console' },
@@ -88,11 +91,11 @@ class instance extends InstanceBase {
 				width: 6,
 				default: '',
 				regex: Regex.IP,
-				isVisible: (options) => {
-					let vis = ['RIO', 'TIO', 'RSIO'].includes(options.model)
-					if (!vis) options.bonjour_host = undefined
-					return vis
-				},
+				disableAutoExpression: true,
+				// isVisible used to also clear options.bonjour_host as a side effect when hidden; plain
+				// expressions can't do that. Not chased further here since it only matters for the
+				// RIO/TIO/RSIO preamp types this studio's DM3 doesn't use.
+				isVisibleExpression: "$(options:model) == 'RIO' || $(options:model) == 'TIO' || $(options:model) == 'RSIO'",
 			},
 			{
 				type: 'textinput',
@@ -103,13 +106,16 @@ class instance extends InstanceBase {
 				width: 6,
 				default: '192.168.0.128',
 				regex: Regex.IP,
-				isVisible: (options) => !options.bonjour_host || !['RIO', 'TIO', 'RSIO'].includes(options.model),
+				isVisibleExpression:
+					"!$(options:bonjour_host) || !($(options:model) == 'RIO' || $(options:model) == 'TIO' || $(options:model) == 'RSIO')",
 			},
 			{
 				type: 'static-text',
+				id: 'hostSpacer',
 				label: '',
 				width: 6,
-				isVisible: (options) => !!options.bonjour_host || !['RIO', 'TIO', 'RSIO'].includes(options.model),
+				isVisibleExpression:
+					"$(options:bonjour_host) || !($(options:model) == 'RIO' || $(options:model) == 'TIO' || $(options:model) == 'RSIO')",
 			},
 			{
 				type: 'checkbox',
@@ -186,6 +192,7 @@ class instance extends InstanceBase {
 			},
 			{
 				type: 'static-text',
+				id: 'keepAliveNote',
 				label:
 					'**NOTE** Do not enable KeepAlive unless you know what it means. It is generally not needed and will increase network traffic.',
 				width: 12,
@@ -197,7 +204,7 @@ class instance extends InstanceBase {
 	// Whenever the console type changes, update the info
 	newConsole() {
 		this.log('info', `Device selected: ${config.model}`)
-		rcpCommands = paramFuncs.getParams(this, config)
+		global.rcpCommands = paramFuncs.getParams(this, config)
 
 		actionFuncs.updateActions(this) // Re-do the actions once the console is chosen
 		varFuncs.initVars(this)
@@ -691,7 +698,7 @@ class instance extends InstanceBase {
 					addSceneRecallPreset(sceneRecallCmd, sceneNumber, bank)
 				}
 			}
-			this.setVariableDefinitions(this.variables)
+			paramFuncs.setVariableDefinitions(this)
 		}
 		var meterPreset = {
 			type: 'button',
@@ -794,7 +801,7 @@ class instance extends InstanceBase {
 											X: x,
 											Y: y,
 											Val: 0,
-											Fade: 1,
+											Fade: '1',
 											Rel: false,
 										},
 									},
@@ -809,7 +816,7 @@ class instance extends InstanceBase {
 											X: x,
 											Y: y,
 											Val: '-Inf',
-											Fade: 1,
+											Fade: '1',
 											Rel: false,
 										},
 									},
@@ -943,9 +950,6 @@ class instance extends InstanceBase {
 						type: 'button',
 						category: 'Fader Control Knobs',
 						name: `${label} fader control`,
-						options: {
-							rotaryActions: true,
-						},
 						style: {
 							text: faderButtonText,
 							size: 14,
@@ -964,7 +968,7 @@ class instance extends InstanceBase {
 											X: x,
 											Y: y,
 											Val: -1,
-											Fade: 0,
+											Fade: '0',
 											Rel: true,
 										},
 									},
@@ -976,7 +980,7 @@ class instance extends InstanceBase {
 											X: x,
 											Y: y,
 											Val: 1,
-											Fade: 0,
+											Fade: '0',
 											Rel: true,
 										},
 									},
@@ -1108,7 +1112,87 @@ class instance extends InstanceBase {
 
 */
 
-		this.setPresetDefinitions(this.rcpPresets)
+		// setPresetDefinitions now wants a structure (sections grouping preset ids) plus a presets
+		// object keyed by id, instead of a flat array with a per-preset category string.
+		const slugify = (s) =>
+			s
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, '_')
+				.replace(/^_+|_+$/g, '')
+
+		// Above, every preset unconditionally sets X/Y/Fade/Rel/etc on its actions and feedbacks, but
+		// createAction() only declares each of those when the underlying parameter actually has that
+		// axis (e.g. Y is skipped for a mono channel's fader level). Companion 5 validates presets
+		// against the real option list and warns loudly about the mismatch, so strip anything a preset
+		// references that its target doesn't actually declare - reusing createAction/
+		// createFeedbackFromAction themselves rather than re-deriving the same rules a second time.
+		const feedbackFuncs = require('./feedbacks.js')
+		const declaredOptionIdsCache = new Map()
+		const getDeclaredOptionIds = (id, isFeedback) => {
+			const cacheKey = `${isFeedback ? 'f' : 'a'}:${id}`
+			if (declaredOptionIdsCache.has(cacheKey)) return declaredOptionIdsCache.get(cacheKey)
+
+			// 'Meter', 'LevelMeter' and 'CurrentScene' are hand-authored feedbacks, not derived from a
+			// parameter row - findRcpCmd won't (and shouldn't) resolve them, so leave their options alone.
+			const rcpCmd = paramFuncs.findRcpCmd(id)
+			const declared = rcpCmd
+				? new Set(
+						(isFeedback
+							? feedbackFuncs.createFeedbackFromAction(this, actionFuncs.createAction(this, rcpCmd))
+							: actionFuncs.createAction(this, rcpCmd)
+						).options.map((opt) => opt.id),
+					)
+				: null
+			declaredOptionIdsCache.set(cacheKey, declared)
+			return declared
+		}
+		const pickDeclaredOptions = (id, options, isFeedback) => {
+			const declared = getDeclaredOptionIds(id, isFeedback)
+			if (!declared || !options) return options
+			return Object.fromEntries(Object.entries(options).filter(([key]) => declared.has(key)))
+		}
+		const stripUnknownPresetOptions = (preset) => {
+			for (const step of preset.steps ?? []) {
+				for (const group of Object.values(step)) {
+					if (!Array.isArray(group)) continue
+					for (const entry of group) {
+						if (entry.actionId && entry.options) {
+							entry.options = pickDeclaredOptions(entry.actionId, entry.options, false)
+						}
+					}
+				}
+			}
+			for (const feedback of preset.feedbacks ?? []) {
+				if (feedback.feedbackId && feedback.options) {
+					feedback.options = pickDeclaredOptions(feedback.feedbackId, feedback.options, true)
+				}
+			}
+			return preset
+		}
+
+		const presetsByCategory = new Map()
+		for (const preset of this.rcpPresets) {
+			if (!presetsByCategory.has(preset.category)) presetsByCategory.set(preset.category, [])
+			presetsByCategory.get(preset.category).push(preset)
+		}
+
+		const structure = []
+		const presets = {}
+		for (const [category, categoryPresets] of presetsByCategory) {
+			const sectionId = slugify(category)
+			const ids = []
+			categoryPresets.forEach((preset, index) => {
+				const { category: _category, ...presetDefinition } = preset
+				presetDefinition.type = 'simple'
+				stripUnknownPresetOptions(presetDefinition)
+				const id = `${sectionId}_${index}`
+				ids.push(id)
+				presets[id] = presetDefinition
+			})
+			structure.push({ id: sectionId, name: category, definitions: ids })
+		}
+
+		this.setPresetDefinitions(structure, presets)
 	}
 
 	// Track whether actions are being recorded
@@ -1170,7 +1254,7 @@ class instance extends InstanceBase {
 		//varFuncs.getVars(this)
 		this.dataStore = {}
 		this.subscribeActions()
-		this.checkFeedbacks()
+		this.checkAllFeedbacks()
 	}
 
 	// Add a value to the dataStore
@@ -1228,4 +1312,7 @@ class instance extends InstanceBase {
 	}
 }
 
-runEntrypoint(instance, upgrade)
+// Companion module API 2.0 removed runEntrypoint() in favour of a plain default export, plus a
+// separately named UpgradeScripts export - see PLAN.md section 9 Phase 1 for how this was verified.
+export default instance
+export { upgrade as UpgradeScripts }

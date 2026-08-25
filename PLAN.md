@@ -635,7 +635,7 @@ of §7.2–§7.7 — some may already be under target once the IPC storm is gone
 
 ## 9. Plan of work
 
-### Phase 1 — Migrate to Companion 5 / module API 2.1
+### Phase 1 — Migrate to Companion 5 / module API 2.1 — **DONE**
 
 Prerequisite for everything else; deletes most of §7.1 outright rather than optimising it.
 
@@ -651,6 +651,87 @@ Prerequisite for everything else; deletes most of §7.1 outright rather than opt
 
 **Exit:** loads and runs on Companion 5.0.4 with no compatibility shim; existing pages behave
 identically; fades still smooth. **Re-measure §7.8 before starting Phase 3.**
+
+#### Phase 1 addendum — what P1.1–P1.5 undersold, found by installing the real package
+
+This section was written from a changelog webpage, not the installed package. The actual npm
+`@companion-module/base@2.1.3` (published 2026-08-12, confirmed compatible with the studio's
+Companion **v5.0.4**, released 2026-08-23, by reading `shared-lib/lib/ModuleApiVersionCheck.ts` in
+the `bitfocus/companion` repo directly — Companion accepts base versions `2 - 2.1.x`) carries several
+further breaking changes P1.1–P1.5 didn't anticipate. All were found by extracting the real package
+and, where that was ambiguous, by reading Companion's own host-loader source
+(`companion/lib/Instance/Connection/Thread/Entrypoint.ts`) and by running the actual
+`yarn package:dev` build end-to-end. Fixed as part of Phase 1, not deferred:
+
+- **No `runEntrypoint`.** Removed in base 2.0.0-alpha.0 ("expect default export instead"). The host
+  loader does `moduleImport.default` for the constructor and reads `moduleImport.UpgradeScripts` off
+  the top-level import namespace — **not** off the default export. Because the build tool
+  (`@companion-module/tools` 3.x) bundles the module with **esbuild in `format: 'esm'`**, and esbuild
+  only synthesises a plain `export default` for a CommonJS entry point (verified empirically — see
+  below), `index.js` had to become the one file in the codebase using real `export default
+  instance; export { upgrade as UpgradeScripts }` at the bottom, while every other file (and
+  `index.js`'s own `require()`s) stays exactly as it was. `module.exports.UpgradeScripts = upgrade`
+  was tried first and silently produces an empty upgrade-script list — worth remembering if this
+  pattern comes up again.
+- **`checkFeedbacks()` now needs at least one feedback type.** No-arg calls (just the one, in
+  `pollConsole()`) become `checkAllFeedbacks()`.
+- **`setVariableDefinitions()` takes an object keyed by `variableId`, not an array.** Added
+  `paramFuncs.setVariableDefinitions(instance)` as the one conversion point; `instance.variables`
+  stays an array internally since it's built with `push()`/`find()` throughout.
+- **Presets were overhauled.** `setPresetDefinitions()` now takes `(structure, presets)` —
+  `structure` is an array of named sections each listing preset ids, `presets` is an object keyed by
+  id, and each preset is `type: 'simple'` (not `'button'`) with no `category` field. `createPresets()`
+  now builds the flat array exactly as before and transforms it into that shape in one place at the
+  end, grouping by the same category strings that used to be per-preset fields. The dead
+  `options: { rotaryActions: true }` on the fader-knob preset was dropped — rotary capability is
+  inferred from having `rotate_left`/`rotate_right` steps now, there's no separate flag.
+- **`useVariables` on an option field is a plain boolean, not `{ local: true }`.** The `{ local: true
+  }` shape in the shipped v3.6.0 code never matched any real API version; fixed on the X/Y/Val option
+  fields in `actions.js`.
+- **Advanced feedbacks (`Meter`, `LevelMeter`, and the per-parameter colour feedbacks) need
+  `affectedProperties`**, and **`imageBuffer` must now be a base64 string** (`Buffer.toString('base64')`)
+  **with an explicit `imageBufferEncoding: { pixelFormat: 'RGBA' }`** — it used to accept the raw
+  Buffer that `companion-module-utils`' `graphics.bar()`/`stackImage()` already returns.
+- **Feedback callback contexts lost `setCustomVariableValue` entirely** (it's action-context-only now,
+  and deprecated even there). The `@(custom:...)` escape hatch in a feedback's `Val` option
+  (`variables.js: fbCreatesVar`) can no longer write a custom variable — there is no replacement.
+  It now logs a one-time warning instead of throwing. **This is a real, unavoidable behaviour loss for
+  anyone using that syntax in a feedback** — worth a targeted check of the studio's actual pages
+  before calling Phase 1 fully closed, since nothing in this repo can see what's configured on the
+  live Companion install.
+- **Strict-mode ESM broke three pre-existing implicit-globals** that sloppy-mode CommonJS had always
+  tolerated silently: `upgrade.js`'s `(upg111to112 = () => (...))`-style assignments (undeclared
+  variable, threw `ReferenceError` immediately on module load — this is what first caught the whole
+  class of bug), plus `for (k = 3; …)` in `paramFuncs.parseData` and `for (i = 0; …)` in
+  `actions.createAction` (C4). Also tightened the two genuine cross-file globals, `global.config` and
+  `global.rcpCommands`, so every *write* site uses the `global.` prefix explicitly rather than relying
+  on an already-established binding falling through the scope chain — same de-facto architecture C1
+  describes (still global, still Phase 2's to fix properly), just no longer one accidental unprefixed
+  write away from breaking under `--experimental-*` strict-mode bundling.
+- **`manifest.json` needs a top-level `"type": "connection"` field**, required since base 2.0.0 and
+  absent from the shipped manifest.
+
+**Verified, not just written:** `yarn install --ignore-engines` (the installed Node here is 26.7,
+newer than `@companion-module/tools`' `^22.18` ceiling — a dev-machine-only mismatch, harmless) then
+`yarn package:dev` builds clean. The built `main.js` was dynamically imported directly and confirmed
+to export a working `default` constructor and a 5-entry `UpgradeScripts` array. Beyond that,
+`paramFuncs.getParams()`, `actions.updateActions()`, `variables.initVars()` and `index.js`'s new
+`createPresets()` were all exercised directly against the real `DM3 Parameters-2.txt` (via a throwaway
+harness, not committed) with no exceptions: 161 parsed commands → 141 actions, 160 feedbacks, 351
+presets across 6 structure sections, every structure-referenced preset id resolving to a real
+definition. This is as far as it can be verified without the actual Companion 5.0.4 host and a live
+DM3 — §10.4's manual test list is still the real gate.
+
+**Not done, still open for whoever picks this up:**
+- `yarn lint` doesn't run — `eslint` isn't an installed dependency despite `@companion-module/tools`
+  expecting it as a peer (`eslint-config-prettier`/`eslint-plugin-prettier`/`eslint-plugin-n` all warn
+  about it on install). Pre-existing gap, not introduced by this migration.
+- The three preset feedback entries that carry `createVariable: true` with no `style` (the bare fader
+  level feedback on the main fader-control and fader-knob presets) were left exactly as they were.
+  The new preset-feedback schema marks `style` as required for boolean-type feedbacks in the type
+  definitions; whether Companion's runtime actually enforces that or just treats a missing `style` as
+  "no override" (which is what the original author clearly intended) couldn't be confirmed without a
+  live host. Watch for it specifically in §10.4 step 1–2.
 
 ### Phase 2 — Correctness and safety
 

@@ -1,16 +1,17 @@
 {
+	"type": "connection",
 	"id": "yamaha-rcp",
 	"name": "yamaha-rcp",
 	"shortname": "yamaha-rcp",
 	"description": "yamaha-rcp",
-	"version": "3.6.0",
+	"version": "3.7.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-yamaha-rcp.git",
 	"bugs": "https://discourse.checkcheckonetwo.com",
 	"maintainers": [],
 	"legacyIds": ["yamaha-scp"],
 	"runtime": {
-		"type": "node18",
+		"type": "node22",
 		"api": "nodejs-ipc",
 		"apiVersion": "0.0.0",
 		"entrypoint": "../index.js"

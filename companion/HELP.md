@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.6.0
+## Yamaha Remote Control Protocol - v3.7.0
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -34,7 +34,9 @@ Note that this module only works to connected hardware. It does not work with th
 
 > Select "Auto-Create Variable" to create a variable in the form **CommandName_Ch#** or **CommandName_Ch#\_Mix#**
 
-> Use **@(internal:custom_MyCustomVar)** in the value field to update a custom variable within a feedback. Custom variable must already exist
+> Use **@(custom:MyCustomVar)** in the value field to update a custom variable from an **action**. Custom variable must already exist.
+>
+> **v3.7.0:** Companion's module API no longer allows a *feedback* to write a custom variable this way (only actions can). If you were relying on `@(custom:...)` inside a feedback's Val option, that write no longer happens — use "Auto-Create Variable" and the module's own variable instead.
 
 **DYNAMIC CHANNEL PARAMETERS**
 

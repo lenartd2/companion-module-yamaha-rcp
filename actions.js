@@ -22,8 +22,7 @@ module.exports = {
 				label: actionNameParts[rcpNameIdx],
 				id: 'X',
 				default: 1,
-				required: true,
-				useVariables: { local: true },
+				useVariables: true,
 			}
 			if (rsioChoices[actionName] !== undefined) {
 				XOpts = {
@@ -58,8 +57,7 @@ module.exports = {
 				label: actionNameParts[rcpNameIdx],
 				id: 'Y',
 				default: 1,
-				required: true,
-				useVariables: { local: true },
+				useVariables: true,
 				allowCustom: true,
 			}
 			if (
@@ -91,7 +89,7 @@ module.exports = {
 				if (pickoffs) {
 					YOpts.label = 'Pickoff'
 					YOpts.choices = []
-					for (i = 0; i < pickoffs.length; i++) {
+					for (let i = 0; i < pickoffs.length; i++) {
 						YOpts.choices.push({ id: i + 1, label: pickoffs[i] })
 					}
 					YOpts.default = 1
@@ -109,10 +107,9 @@ module.exports = {
 			label: actionNameParts[rcpNameIdx],
 			id: 'Val',
 			default: rcpCmd.Default,
-			required: true,
 			minChoicesForSearch: 0,
 			allowCustom: true,
-			useVariables: { local: true },
+			useVariables: true,
 		}
 		switch (rcpCmd.Type) {
 			case 'bool':
@@ -184,6 +181,7 @@ module.exports = {
 		// Make sure the current value is stored in dataStore[]
 
 		if (rcpCmd.Index < 1000 && rcpCmd.RW.includes('r')) {
+			newAction.optionsToMonitorForSubscribe = ['X', 'Y']
 			newAction.subscribe = async (action, context) => {
 				let options = await paramFuncs.parseOptions(context, action.options)
 				if (options != undefined) {
@@ -220,11 +218,11 @@ module.exports = {
 			if (rcpCommand.RW.includes('w')) {
 				newAction.callback = async (action, context) => {
 					let foundCmd = paramFuncs.findRcpCmd(action.actionId) // Find which command
-					let XArr = JSON.parse(await context.parseVariablesInString(String(action.options.X || 0)))
+					let XArr = JSON.parse(String(action.options.X || 0))
 					if (!Array.isArray(XArr)) {
 						XArr = [XArr]
 					}
-					let YArr = JSON.parse(await context.parseVariablesInString(String(action.options.Y || 0)))
+					let YArr = JSON.parse(String(action.options.Y || 0))
 					if (!Array.isArray(YArr)) {
 						YArr = [YArr]
 					}
@@ -262,6 +260,7 @@ module.exports = {
 			type: 'advanced',
 			name: 'VUMeter',
 			description: 'Show a Bargraph VU Meter on the button',
+			affectedProperties: ['imageBuffer'],
 			options: [
 				{
 					type: 'dropdown',
@@ -283,7 +282,6 @@ module.exports = {
 					min: 0,
 					max: 72,
 					default: 1,
-					required: true,
 				},
 				{
 					type: 'textinput',
@@ -365,7 +363,7 @@ module.exports = {
 					barLength: bLength,
 					barWidth: bWidth,
 					type: position == 'left' || position == 'right' ? 'vertical' : 'horizontal',
-					value: bVal(1 * (await context.parseVariablesInString(feedback.options.meterVal1))),
+					value: bVal(1 * feedback.options.meterVal1),
 					offsetX: ofsX1,
 					offsetY: ofsY1,
 					opacity: 255,
@@ -382,7 +380,7 @@ module.exports = {
 				if (feedback.options.meterVal2) {
 					options2 = {
 						...options1,
-						value: bVal(1 * (await context.parseVariablesInString(feedback.options.meterVal2))),
+						value: bVal(1 * feedback.options.meterVal2),
 						offsetX: ofsX2,
 						offsetY: ofsY2,
 					}
@@ -400,7 +398,13 @@ module.exports = {
 					bars.push(options2.value == 100 ? graphics.bar(peak2) : graphics.bar(options2))
 				}
 
-				return { imageBuffer: graphics.stackImage(bars) }
+				return {
+					imageBuffer: graphics.stackImage(bars).toString('base64'),
+					// companion-module-utils writes each pixel via writeUint32BE(alpha*2^24 + rgb, ...),
+					// which puts alpha in the first byte - that's ARGB, not RGBA.
+					imageBufferEncoding: { pixelFormat: 'ARGB' },
+					imageBufferPosition: { x: 0, y: 0, width: feedback.image.width, height: feedback.image.height },
+				}
 			},
 		}
 
@@ -408,6 +412,7 @@ module.exports = {
 			type: 'advanced',
 			name: 'LevelMeter',
 			description: 'Show a horizontal fader level position meter on the button',
+			affectedProperties: ['imageBuffer'],
 			options: [
 				{
 					type: 'dropdown',
@@ -427,7 +432,6 @@ module.exports = {
 					min: 0,
 					max: 72,
 					default: 1,
-					required: true,
 				},
 				{
 					type: 'textinput',
@@ -437,10 +441,10 @@ module.exports = {
 					useVariables: true,
 				},
 			],
-			callback: async (feedback, context) => {
+			callback: async (feedback) => {
 				const padding = feedback.options.padding
 				const barWidth = 7
-				const level = await context.parseVariablesInString(feedback.options.level)
+				const level = feedback.options.level
 				const faderVal = (level) => {
 					if (String(level).toUpperCase() == '-INF') return 0
 					const value = Number(level)
@@ -462,7 +466,13 @@ module.exports = {
 					opacity: 255,
 				}
 
-				return { imageBuffer: graphics.bar(options) }
+				return {
+					imageBuffer: graphics.bar(options).toString('base64'),
+					// companion-module-utils writes each pixel via writeUint32BE(alpha*2^24 + rgb, ...),
+					// which puts alpha in the first byte - that's ARGB, not RGBA.
+					imageBufferEncoding: { pixelFormat: 'ARGB' },
+					imageBufferPosition: { x: 0, y: 0, width: feedback.image.width, height: feedback.image.height },
+				}
 			},
 		}
 

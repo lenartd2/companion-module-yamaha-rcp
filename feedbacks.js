@@ -8,6 +8,7 @@ module.exports = {
 
 		if (instance.colorCommands.includes(action.name)) {
 			newFeedback.type = 'advanced' // Old feedback style
+			newFeedback.affectedProperties = ['color', 'bgcolor']
 			newFeedback.options.pop()
 		} else {
 			newFeedback.type = 'boolean' // New feedback style
@@ -28,6 +29,8 @@ module.exports = {
 				id: 'createVariable',
 				tooltip: 'Creates a Companion variable from this feedback value so it can be shown on buttons or used by other controls.',
 				default: false,
+				// Referenced by the Val option's isVisibleExpression below.
+				disableAutoExpression: true,
 			})
 		}
 
@@ -38,8 +41,7 @@ module.exports = {
 
 		let valOptionIdx = newFeedback.options.findIndex((opt) => opt.id == 'Val')
 		if (valOptionIdx > -1) {
-			newFeedback.options[valOptionIdx].isVisible = (options) => !options.createVariable
-			newFeedback.options[valOptionIdx].required = false
+			newFeedback.options[valOptionIdx].isVisibleExpression = '!$(options:createVariable)'
 		}
 
 		newFeedback.callback = async (feedback, context) => {
@@ -59,7 +61,7 @@ module.exports = {
 
 			fb.X = feedback.options.X
 			fb.Y = feedback.options.Y
-			varFuncs.fbCreatesVar(instance, fb, data) // Are we creating and/or updating a variable?
+			varFuncs.fbCreatesVar(instance, fb, data, context) // Are we creating and/or updating a variable?
 
 			//	if (options && data == options.Val) {
 			if (fb.Val == data) {
