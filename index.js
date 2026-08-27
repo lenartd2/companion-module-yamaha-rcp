@@ -57,6 +57,7 @@ class instance extends InstanceBase {
 		}
 		this.fadeQueue = []
 		clearInterval(this.meterTimer)
+		clearInterval(this.kaTimer)
 		this.socket?.destroy()
 		this.log('debug', `[${new Date().toJSON()}] destroyed ${this.id}`)
 	}
@@ -125,6 +126,15 @@ class instance extends InstanceBase {
 					'Recalling a scene from the console surface while Companion fades are running can cause the console and Companion to fight over fader values. Keep this enabled to cancel active and queued fades when the module detects a scene change.',
 				width: 4,
 				default: true,
+			},
+			{
+				type: 'checkbox',
+				id: 'allowSceneStore',
+				label: 'Allow Scene Store?',
+				tooltip:
+					'Storing a scene overwrites it on the console with the current state - no confirmation, no undo. Leave this off unless you specifically need a Scene Store button; any Scene Store action is ignored (and logged as a warning) while this is disabled.',
+				width: 4,
+				default: false,
 			},
 			{
 				type: 'number',
@@ -231,10 +241,17 @@ class instance extends InstanceBase {
 			})
 
 			this.socket.on('error', (err) => {
-				this.log('error', `Network error: ${err.message}`)
+				// TCPHelper already retries on its own (reconnect: true by default) - C7 was mainly
+				// about the log flooding that comes with that, once every retry during an extended
+				// outage logs an identical line. Only log when the message actually changes.
+				if (err.message !== this._lastNetworkError) {
+					this._lastNetworkError = err.message
+					this.log('error', `Network error: ${err.message}`)
+				}
 			})
 
 			this.socket.on('connect', () => {
+				this._lastNetworkError = undefined
 				this.log('info', `Connected!`)
 				clearInterval(this.meterTimer)
 				clearInterval(this.kaTimer)
