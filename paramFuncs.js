@@ -92,6 +92,12 @@ module.exports = {
 		return rcpCmd !== undefined && rcpCmd.Index >= 1000 && rcpCmd.Index < 2000 && rcpCmd.Index != 1001
 	},
 
+	// Index 1001 is the scene *store* command (ssupdate_ex) - overwrites a scene on the console with
+	// no confirmation and no undo (C8). Distinct from isSceneRecall, which explicitly excludes it.
+	isSceneStore: (rcpCmd) => {
+		return rcpCmd !== undefined && rcpCmd.Index == 1001
+	},
+
 	getSceneNameVariableName: (address, sceneNumber) => {
 		return `scene_${String(address).replace(/[^a-zA-Z0-9]/g, '_')}_${String(sceneNumber).replace(/[^a-zA-Z0-9]/g, '_')}`
 	},
@@ -302,7 +308,12 @@ module.exports = {
 						break
 
 					case 'mtr':
-						params = RCP_METER_FIELDS
+						// Copy, don't mutate RCP_METER_FIELDS itself (C5) - harmless today only because
+						// every call site happens to invoke parseData() one line at a time, so this
+						// array is never reused across more than one 'mtr' line, but the append-in-place
+						// pattern would silently accumulate duplicate entries the moment that stopped
+						// being true (e.g. batch-processing a chunk of lines in one call).
+						params = [...RCP_METER_FIELDS]
 						for (let k = 3; k < line.length; k++) {
 							params.push(k - 3)
 						}
