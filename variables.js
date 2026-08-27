@@ -279,10 +279,7 @@ module.exports = {
 		if (cmd.createVariable) {
 			// Auto-create a variable
 
-			let cmdName = rcpCmd.Address.slice(rcpCmd.Address.indexOf('/') + 1).replace(/\//g, '_')
-			let varName = `V_${cmdName}`
-			varName = varName + (cmd.X ? `_${cmd.X}` : '')
-			varName = varName + (cmd.Y ? `_${cmd.Y}` : '')
+			let varName = paramFuncs.getAutoVariableName(rcpCmd, cmd.X, cmd.Y)
 
 			let varToAdd = { variableId: varName, name: 'Auto-Created Variable' }
 			let varIndex = instance.variables.findIndex((i) => i.variableId === varToAdd.variableId)

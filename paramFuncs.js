@@ -113,6 +113,21 @@ module.exports = {
 		return varName
 	},
 
+	// The name variables.js's fbCreatesVar actually gives an auto-created variable when a feedback
+	// with "Auto-Create Variable" fires, as a shared helper - not getIndexedVariableName above, which
+	// has a different rule (whether the *row* declares >1 channel) and a different indexing
+	// convention (0-based in, +1 applied inside). fbCreatesVar's rule is simpler: append whatever raw
+	// x/y value it was actually called with, whenever that value is truthy. Callers that need to
+	// predict this name ahead of time (e.g. createPresets()'s meter buttons) must use this exact
+	// formula or the prediction silently drifts from what actually gets created - found while fixing
+	// C6, see PLAN.md's Phase 4 writeup.
+	getAutoVariableName: (rcpCmd, x, y) => {
+		let varName = module.exports.getBaseVariableName(rcpCmd)
+		varName = varName + (x ? `_${x}` : '')
+		varName = varName + (y ? `_${y}` : '')
+		return varName
+	},
+
 	getFadeKey: (cmd) => `${cmd.Address}:${cmd.X ?? 0}:${cmd.Y ?? 0}`,
 
 	// setVariableDefinitions now expects an object keyed by variableId rather than an array;
@@ -613,7 +628,16 @@ module.exports = {
 	findRcpCmd: (instance, cmdName, cmdAction = '') => {
 		let rcpCmd = undefined
 		if (cmdName != undefined) {
-			if (cmdAction == 'mtr') {
+			if (cmdAction == 'mtr' && instance.config.model != 'DM3') {
+				// C6/PLAN.md §4.5: every model except DM3 (currently) ships a synthesised meter table
+				// that collapses several real per-pickoff addresses into one generic row plus a
+				// Pickoff column, e.g. "MIXER:Current/Meter/InCh" covering
+				// PreHPF/PreFader/PostOn. The wire address for an actual meter value carries the real
+				// pickoff as its last segment (e.g. ".../InCh/PreHPF") - insert the invented "Meter/"
+				// segment and strip that last segment back off to match the synthesised row's address.
+				// DM3's table now has the console's own real, flat, one-address-per-pickoff rows
+				// (fixed as part of this same bug, see the mtrinfo rows in "DM3 Parameters-2.txt") and
+				// needs no rewriting at all - the wire address already matches a row's Address exactly.
 				cmdName = cmdName.replace('Current/', 'Current/Meter/')
 
 				if (instance.config.model == 'TIO' || instance.config.model == 'RIO') {

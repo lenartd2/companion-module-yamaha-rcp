@@ -3,6 +3,45 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.10.0] - 2026-08-28
+
+Phase 4: DM3 metering rebuild (fixes C6) and new Dante remote head-amp parameters (PLAN.md §4.5,
+§5.3, §9).
+
+### Fixed
+
+- **DM3 metering was fundamentally broken** - stereo meters (`St`) only showed the left channel,
+  some meter types (`StInCh`) showed nothing at all, and FX return meters always showed channel 1
+  regardless of which channel was selected. Root cause: the shipped parameter table invented a
+  collapsed address shape (e.g. a single `Meter/InCh` row covering three real pickoffs via a
+  fabricated "Pickoff" axis) that doesn't match what the console actually sends - the real console
+  exposes 17 flat, one-address-per-pickoff meter rows (confirmed via a live sweep), and the
+  invented reconstruction was transposing them. DM3's meter table now uses the console's own real
+  addresses directly; the shared lookup/formatting code already handled this shape correctly for
+  other cases (it needed one new DM3-specific branch, not the wider rewrite originally expected).
+  Every other model's meter handling is untouched and was verified byte-for-byte identical for
+  their address-resolution logic.
+- **A meter/VU bar's displayed value could never actually populate**, on every model, not just
+  DM3 - a preset's predicted auto-created-variable name and the name the variable actually gets
+  created under were computed by two independently hand-maintained formulas that had drifted out of
+  sync (found while fixing the DM3 issue above). Both now go through one shared helper
+  (`getAutoVariableName`), so this can't silently drift again.
+
+### Added
+
+- **Dante remote head-amp gain and 48V phantom power** (`IO:Current/PortToPort/HAGain`,
+  `IO:Current/PortToPort/48VOn`) for a Rio-class stagebox on the Dante network, plus
+  `IO:Current/PortToPort/HAAvailability` to detect whether one is actually patched. These 3
+  parameters exist on this firmware line but were never in the module before.
+
+### Known limitations
+
+- **The Dante remote-HA gain/phantom read-write path is implemented per the documented protocol
+  but not live-verified** - this console has no Rio-class device on its Dante network right now, so
+  `HAAvailability` correctly reads `0` and any attempt to read or write gain/phantom is correctly
+  refused by the console (`AccessDenied`), which is exactly the documented behaviour with nothing
+  patched - but the actual working gain/phantom control path has no way to be exercised without one.
+
 ## [3.9.0] - 2026-08-27
 
 Phase 3: performance (PLAN.md §7, §9). No user-facing behaviour changes are intended - buttons and

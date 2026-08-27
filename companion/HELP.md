@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.9.0
+## Yamaha Remote Control Protocol - v3.10.0
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -44,6 +44,22 @@ Note that this module only works to connected hardware. It does not work with th
 > Use **@(custom:MyCustomVar)** in the value field to update a custom variable from an **action**. Custom variable must already exist.
 >
 > **v3.7.0:** Companion's module API no longer allows a *feedback* to write a custom variable this way (only actions can). If you were relying on `@(custom:...)` inside a feedback's Val option, that write no longer happens — use "Auto-Create Variable" and the module's own variable instead.
+
+**METERING (DM3)**
+
+> **v3.10.0:** DM3 metering is now driven from the console's own real meter addresses instead of a
+> hand-built table, fixing several long-standing bugs (stereo meters only showing the left channel,
+> some meter types showing nothing at all, FX return meters always showing channel 1). If you built
+> meter feedbacks/presets on an older version, they'll still work - the underlying data changed, not
+> the action/feedback names.
+
+**DANTE REMOTE HEAD-AMP CONTROL (DM3)**
+
+> **v3.10.0:** remote head-amp gain and 48V phantom power for a Dante-connected Rio-class stagebox
+> (16 channels) are now available as actions/feedbacks. **`HAAvailability`** tells you whether a
+> remote head-amp is actually patched right now - it reads `0` (and gain/phantom reads and writes
+> get refused by the console) until one is. This is normal on a system with no Rio-class device on
+> the Dante network, not a fault - check `HAAvailability` before building a button around gain/48V.
 
 **DYNAMIC CHANNEL PARAMETERS**
 

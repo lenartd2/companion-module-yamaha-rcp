@@ -869,7 +869,7 @@ doing that meaningfully needs a real Companion install driving a realistic butto
 under metering load, which needs the user at the console. The mechanism-level fixes above are the
 actual content of §7.2-§7.7; §7.8 is the user-facing confirmation that they add up, still open.
 
-### Phase 4 — Metering rebuild and Dante HA
+### Phase 4 — Metering rebuild and Dante HA — **DONE**
 
 - **P4.1** Rebuild DM3 metering on the console's own 17-row flat enumeration instead of the
   synthesised `Pickoff` table. Fixes C6 and removes the meter special-casing in `fmtCmd`.
@@ -879,6 +879,74 @@ actual content of §7.2-§7.7; §7.8 is the user-facing confirmation that they a
 
 **Exit:** working stereo meters on ST and ST-IN; per-FX-return meters; stagebox gain and phantom
 from a button (or a clear "unavailable" state).
+
+**Closed 2026-08-28, shipped as v3.10.0.** Landed and tested while offsite, same constraints as
+Phase 3: no live Companion install, no user at the console, deliberately no destructive/state-
+changing commands sent. Unlike Phase 3, this phase touches what actual studio buttons will render
+on screen, so verification leaned even harder on live ground-truth captures before touching
+anything.
+
+- **P4.1.** Before writing any code, re-swept the console directly (`tools/rcp-probe.js
+  --sweep=mtrinfo:0-20`) rather than trusting this document's own §4.5 excerpt, which only showed 3
+  of the 17 rows as an example. Got the complete, current 17-row enumeration (`InCh`/`StInCh`
+  /`FxRtnCh`/`Mix`/`Mtrx`/`St`, each already a specific pickoff — `PreHPF`/`PreFader`/`PostOn` etc.,
+  no invented axis), plus a live `mtrstart` capture confirming the wire response's `Address` field
+  is the exact same real address, unmodified — the console never sends the collapsed form the
+  shipped table invented. Replaced the 6 synthesised rows in `DM3 Parameters-2.txt` with the real
+  17. The only `.js` change actually needed was one new DM3-specific branch in `findRcpCmd`'s
+  `cmdAction === 'mtr'` handling (skip the invented-segment-insert-and-truncate reconstruction
+  entirely — the wire address already matches a row exactly) — `fmtCmd`'s existing Pickoff-optional
+  handling and the `Index >= 2000` meter-detection convention needed no changes at all, since
+  Pickoff-less rows were already a legitimate (if previously unexercised for DM3) shape the code
+  supported for other models.
+
+  Tracing `createPresets()`'s two meter-preset builders (the standalone "Level Meters" category and
+  the VU-meter bar embedded in fader-control-knob presets) surfaced a **second, independent,
+  pre-existing bug affecting every model, not just DM3**: the preset's predicted auto-created
+  variable name (hand-built as `V_Meter_<name>_<x>_<pickoff-name>`) never actually matched what
+  `fbCreatesVar` creates (`V_<address>_<x>_<numeric-y>`) — meaning a meter's VU bar could never
+  populate even when the underlying feedback fired correctly. Fixed by extracting one shared
+  `paramFuncs.getAutoVariableName()` helper that both call, so the prediction can't drift from the
+  creation again. Rewrote both preset builders to handle old-style (Pickoff column, every model but
+  DM3) and new-style (flat, DM3) rows through the same explicit per-fader-type "which pickoff should
+  this meter show" map (input-side channels show their earliest pre-processing point, for
+  gain-staging; bus/output channels show the final post-everything level) — a direct, named port of
+  the old code's own `Index<2100`-vs-`>=2100` split.
+
+  Verified: (1) pure-logic parity test — all 17 real DM3 rows parse with the right shape, exact
+  address lookup resolves via `findRcpCmd`'s new branch, and the other 7 models' old-style
+  resolution and Pickoff-bearing tables are provably untouched. (2) Live end-to-end test against the
+  real console with metering enabled — all 17 real `mtrstart` subscriptions sent (batched into one
+  write per §7.3), real streamed values landed in `dataStore` for all 17 rows, feedback checks fired
+  correctly, and firing a real feedback callback with "Auto-Create Variable" on produced a variable
+  whose name exactly matched `getMeterInfo`'s prediction — the mismatch bug above, confirmed fixed
+  end-to-end, not just by inspection. (3) The existing action/feedback/preset smoke test, confirming
+  counts move by exactly the expected amount (+11 commands, +11 feedbacks, +11 presets) with no
+  structural breakage.
+
+  One unrelated, unreproduced anomaly surfaced during this testing: a single live run hit an
+  uncaught exception in `variables.js`'s `setVar` (`msg.Address` was undefined in its `default:`
+  case) that didn't recur across 4 further identical runs. Not caused by this phase's changes
+  (that function wasn't touched here) and not chased down given it's out of scope and non-
+  reproducing — flagged as a background task for whoever picks it up next rather than silently
+  dropped.
+
+- **P4.2.** Added the 3 documented `IO:Current/PortToPort/*` parameters
+  (`HAAvailability`/`48VOn`/`HAGain`) to `DM3 Parameters-2.txt`. Cross-checked their index numbers
+  against a fresh live `prminfo:0-180` sweep first — the numbers in this document's own §5.3
+  excerpt (20/21/23) turned out to collide with two *existing* shipped rows at those same indices
+  (`InCh/48VOn`/`InCh/HAGain`) that have since shifted on the real console but not in the shipped
+  file. Rather than renumber the whole downstream table to match (`Index` is pure local bookkeeping
+  — the module never sends it to the console, only the `Address` string — so realigning it has no
+  functional effect and would only add risk), gave the 3 new rows their own unused indices
+  (174-176, right after the file's existing highest index) and left everything else alone.
+  Live-verified the read side end-to-end through the real module code: `HAAvailability` correctly
+  reads back `0` (matches [§5.3](#53-the-dante-remote-ha-caveat)'s documented "nothing patched"
+  state), and `get`s against `HAGain`/`48VOn` are refused by the console exactly as documented,
+  handled gracefully with no crash. **The actual gain/phantom read-write control path remains
+  genuinely unverifiable** — there is still no Rio-class device on this Dante network, and won't be
+  without the user physically patching one in, exactly as this document anticipated when Phase 4 was
+  planned.
 
 ### Phase 5 — Broadcast feature layer
 

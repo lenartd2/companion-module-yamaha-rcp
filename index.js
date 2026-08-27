@@ -443,16 +443,37 @@ class instance extends InstanceBase {
 			St: 'St',
 			Mono: 'Mono',
 		}
+		// Which pickoff a fader's VU meter should actually display - input-side channels show their
+		// earliest pre-processing point (useful for gain-staging against clipping at the source),
+		// bus/output-side channels show the final post-everything level. A direct port of the
+		// pre-C6-fix code's own Index<2100-vs->=2100 split, just named instead of index-banded.
+		const desiredMeterPickoff = {
+			InCh: 'PreHPF',
+			StInCh: 'PreEQ',
+			FxRtnCh: 'PreFader',
+			Mix: 'PostOn',
+			Mtrx: 'PostOn',
+			St: 'PostOn',
+			Mono: 'PostOn',
+		}
 		const getMeterInfo = (faderName, x) => {
 			let meterName = faderMeterNames[faderName]
 			if (!meterName) return undefined
+			const desiredPickoff = desiredMeterPickoff[faderName]
 
-			const meterCmd = meterCmds.find((c) => c.Address.endsWith(`/Meter/${meterName}`))
-			if (meterCmd === undefined) return undefined
-
-			const pickoffs = meterCmd.Pickoff?.split('|')
-			const pickoffIndex = pickoffs ? (meterCmd.Index < 2100 ? 1 : parseInt(meterCmd.Y) || 1) : 1
-			const pickoff = pickoffs?.[pickoffIndex - 1]
+			// Two possible meter-row shapes on the wire - see PLAN.md §4.5/C6. Old-style (every model
+			// except DM3, currently): one synthesised row per channel type, a trailing Pickoff column,
+			// an invented "/Meter/" address segment. New-style (DM3, post-C6-fix): the console's own
+			// flat enumeration - one real address per pickoff, no Pickoff column, no invented segment.
+			let meterCmd = meterCmds.find((c) => c.Address.endsWith(`/Meter/${meterName}`))
+			let pickoffIndex = 1
+			if (meterCmd !== undefined) {
+				const pickoffs = meterCmd.Pickoff?.split('|')
+				if (pickoffs) pickoffIndex = Math.max(pickoffs.indexOf(desiredPickoff), 0) + 1
+			} else {
+				meterCmd = meterCmds.find((c) => c.Address.endsWith(`/${meterName}/${desiredPickoff}`))
+				if (meterCmd === undefined) return undefined
+			}
 
 			return {
 				feedbackId: meterCmd.Address.replace(/:/g, '_'),
@@ -462,7 +483,10 @@ class instance extends InstanceBase {
 					Val: 0,
 					createVariable: true,
 				},
-				variable: `$(${this.label}:V_Meter_${meterName}_${x}${pickoff ? `_${pickoff}` : ''})`,
+				// Must match variables.js's fbCreatesVar exactly, via the same shared helper - a
+				// hand-built prediction here silently drifts out of sync with the name that's actually
+				// created (found while fixing C6, see PLAN.md's Phase 4 writeup).
+				variable: `$(${this.label}:${paramFuncs.getAutoVariableName(meterCmd, x, pickoffIndex)})`,
 			}
 		}
 		const getFaderVariable = (rcpCmd, x, y) => {
@@ -772,25 +796,38 @@ class instance extends InstanceBase {
 
 		for (const c of meterCmds) {
 			var curPreset = JSON.parse(JSON.stringify(meterPreset))
-			// console.log(c)
+			// Two possible meter-row shapes - see PLAN.md §4.5/C6. Old-style (every model except DM3
+			// currently): one synthesised row per channel type ("MIXER:Current/Meter/InCh"), a
+			// trailing Pickoff column, so one row covers every pickoff and cmdName is just the channel
+			// type. New-style (DM3, post-C6-fix): the console's own flat enumeration
+			// ("MIXER:Current/InCh/PreHPF") - each row is already one specific real pickoff, so
+			// channelType and cmdName differ (cmdName includes the pickoff for a distinct preset name).
 			var addrParts = c.Address.split('/')
-			var cmdName = addrParts.length > 1 ? addrParts[2] : ''
-			var pickoffIndex = c.Index < 2100 ? 1 : c.Y
-			var pickoffName = ''
+			var channelType
+			var cmdName
+			var pickoffIndex
 			if (c.Pickoff) {
-				cmdName = addrParts.length > 0 ? addrParts[addrParts.length - 1] : ''
-				var pickoffParts = c.Pickoff.split('|')
-				pickoffName = `_${pickoffParts[pickoffIndex - 1]}`
+				channelType = addrParts.length > 0 ? addrParts[addrParts.length - 1] : ''
+				cmdName = channelType
+				pickoffIndex = c.Index < 2100 ? 1 : c.Y
+			} else {
+				channelType = addrParts.length > 1 ? addrParts[addrParts.length - 2] : ''
+				var pickoffLabel = addrParts.length > 0 ? addrParts[addrParts.length - 1] : ''
+				cmdName = channelType && pickoffLabel ? `${channelType}_${pickoffLabel}` : ''
+				pickoffIndex = 1
 			}
 			if (cmdName) {
 				curPreset.name = `Meter Level Indicator - ${cmdName}`
 				curPreset.style.text = `${cmdName}\\nMeter\\n`
-				curPreset.feedbacks[0].options.meterVal1 = `$(${this.label}:V_Meter_${cmdName}_1${pickoffName})`
+				// Must match variables.js's fbCreatesVar exactly, via the same shared helper - a
+				// hand-built prediction here silently drifts out of sync with the name that's actually
+				// created (found while fixing C6, see PLAN.md's Phase 4 writeup).
+				curPreset.feedbacks[0].options.meterVal1 = `$(${this.label}:${paramFuncs.getAutoVariableName(c, 1, pickoffIndex)})`
 				curPreset.feedbacks[1].feedbackId = c.Address.replace(/:/g, '_')
 				curPreset.feedbacks[1].options.Y = pickoffIndex
-				if (cmdName == 'St' || cmdName == 'StInCh' || cmdName == 'FxRtnCh') {
+				if (channelType == 'St' || channelType == 'StInCh' || channelType == 'FxRtnCh') {
 					// Make a Stereo Meter
-					curPreset.feedbacks[0].options.meterVal2 = `$(${this.label}:V_Meter_${cmdName}_2${pickoffName})`
+					curPreset.feedbacks[0].options.meterVal2 = `$(${this.label}:${paramFuncs.getAutoVariableName(c, 2, pickoffIndex)})`
 					curPreset.feedbacks.push(JSON.parse(JSON.stringify(curPreset.feedbacks[1])))
 					curPreset.feedbacks[2].options.X = 2 // Right channel
 				}
