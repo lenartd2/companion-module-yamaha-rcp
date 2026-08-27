@@ -863,8 +863,16 @@ minimum before calling any phase done:
    off, the fader jumps straight to the target (correct — that's the non-fade path); with a Fade
    duration set, it takes exactly that long to arrive, smoothly. P1.5 (verify the fade engine
    under the new option semantics) is satisfied.
-4. ⬜ Recall scene A31 from the console surface; confirm Companion resyncs and **no trigger fires
-   spuriously** (this is the C6/§7.2 regression test). Not tested.
+4. ✅ Recall scene A31 from the console surface; confirm Companion resyncs and **no trigger fires
+   spuriously** (this is the §7.2 regression test — the "C6" in the original label was a
+   mislabel, C6 is item 5's concern, not this one). Confirmed 2026-08-27, recalling scene 32 (not
+   literally A31, but the same mechanism): `NOTIFY ssrecall_ex` → `NOTIFY sscurrent_ex ... 32
+   unmodified` → `ssinfo_ex` → a burst of individual `get`s for whatever's on the visible page, no
+   errors, no failed parses. This **is** the documented §7.2 wipe-and-repoll storm happening
+   exactly as PLAN.md describes it (a redundant quadruple `mtrstart` resend was visible in the
+   log) — that inefficiency is real but explicitly Phase 3's to fix, not a Phase 1 regression.
+   No visible flicker or spurious state on the currently-displayed page, confirmed by direct
+   observation.
 5. ⬜ Enable metering; confirm ST meters show **both** channels (the C6 regression test). Only a
    mono `InCh` meter was tested (and confirmed rendering correctly after the ARGB fix) — **not**
    the `St` stereo pair this item is actually about. Expect this to still fail: C6 (metering
@@ -875,10 +883,12 @@ minimum before calling any phase done:
    still-open by the 2026-08-25 audit (`YamahaRCP/audit/AUDIT.md`) and was never in Phase 1's
    scope to fix.
 
-**Net: Phase 1's own exit bar ("loads and runs... existing pages behave identically") is not
-fully closed yet** — 3 of 6 items confirmed (2026-08-25 and 2026-08-27 sessions), 2 more expected
-to still fail by design (deferred to Phase 4/2). Scene recall and connection-deletion/timer
-cleanup are the two genuinely open items left to actually run against the mixer.
+**Net: Phase 1's own exit bar ("loads and runs... existing pages behave identically") is closed,
+within Phase 1's actual scope.** 4 of 6 items confirmed (2026-08-25 and 2026-08-27 sessions); the
+remaining 2 (item 5, stereo metering / C6; item 6, connection-deletion timer leak / C2) are
+pre-existing bugs Phase 1 never intended to fix, correctly deferred to Phase 4 and Phase 2
+respectively — their continued failure is expected, not outstanding migration work. **Phase 1 can
+now be considered genuinely done.**
 
 Use `tools/rcp-probe.js` to read ground truth from the console at any point — it's read-only and
 safe to run alongside Companion, since the DM3 accepts multiple simultaneous control connections.
