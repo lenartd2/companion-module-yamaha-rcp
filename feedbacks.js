@@ -20,14 +20,15 @@ module.exports = {
 					stateOption.default = 1 // Don't select Toggle if there's no Toggle!
 				}
 				newFeedback.options = newFeedback.options.filter(
-					(option) => option.label != 'Relative' && option.label != 'Fading'
+					(option) => option.label != 'Relative' && option.label != 'Fading',
 				)
 			}
 			newFeedback.options.push({
 				type: 'checkbox',
 				label: 'Auto-Create Variable',
 				id: 'createVariable',
-				tooltip: 'Creates a Companion variable from this feedback value so it can be shown on buttons or used by other controls.',
+				tooltip:
+					'Creates a Companion variable from this feedback value so it can be shown on buttons or used by other controls.',
 				default: false,
 				// Referenced by the Val option's isVisibleExpression below.
 				disableAutoExpression: true,

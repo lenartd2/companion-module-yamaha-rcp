@@ -17,7 +17,6 @@ module.exports = {
 		const rsioChoices = require('./rsioChoices.json')
 		const paramFuncs = require('./paramFuncs.js')
 
-		let newAction = {}
 		let paramsToAdd = []
 		let actionName = rcpCmd.Address.slice(rcpCmd.Address.indexOf('/') + 1) // String after "MIXER:Current/"
 
@@ -25,7 +24,7 @@ module.exports = {
 		let actionNameParts = actionName.split('/')
 		let rcpNameIdx = actionName.startsWith('Cue') || actionName.startsWith('Meter') ? 1 : 0
 
-		newAction = { name: actionName, options: [] }
+		let newAction = { name: actionName, options: [] }
 
 		// X parameter - always an integer
 		if (rcpCmd.X > 1) {
@@ -142,6 +141,7 @@ module.exports = {
 
 			case 'mtr':
 				ValOpts.label = 'Level'
+			// falls through - mtr shares the integer/freq textinput logic below
 
 			case 'integer':
 			case 'freq':
@@ -219,12 +219,10 @@ module.exports = {
 
 		let commands = {}
 		let feedbacks = {}
-		let rcpCommand = {}
-		let actionName = ''
 
 		for (let i = 0; i < instance.rcpCommands.length; i++) {
-			rcpCommand = instance.rcpCommands[i]
-			actionName = rcpCommand.Address.replace(/:/g, '_') // Change the : to _ as companion doesn't like colons in names
+			let rcpCommand = instance.rcpCommands[i]
+			let actionName = rcpCommand.Address.replace(/:/g, '_') // Change the : to _ as companion doesn't like colons in names
 			let newAction = module.exports.createAction(instance, rcpCommand)
 
 			if (rcpCommand.RW.includes('r')) {
@@ -325,7 +323,7 @@ module.exports = {
 					useVariables: true,
 				},
 			],
-			callback: async (feedback, context) => {
+			callback: async (feedback) => {
 				let position = feedback.options.position
 				let padding = feedback.options.padding
 				let ofsX1 = 0

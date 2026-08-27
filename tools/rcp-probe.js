@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 //
 // rcp-probe.js — read-only probe of a Yamaha RCP console.
 //
@@ -59,7 +58,16 @@ const quietMs = Number(flags.timeout) || 2500 // stop once the console has been 
 const lines = []
 
 // Guard rail: never let a --raw argument mutate the console.
-const WRITE_VERBS = ['set', 'ssrecall', 'ssrecall_ex', 'ssrecallt_ex', 'ssupdate', 'ssupdate_ex', 'ssupdatet_ex', 'event']
+const WRITE_VERBS = [
+	'set',
+	'ssrecall',
+	'ssrecall_ex',
+	'ssrecallt_ex',
+	'ssupdate',
+	'ssupdate_ex',
+	'ssupdatet_ex',
+	'event',
+]
 
 function assertReadOnly(cmd) {
 	const verb = cmd.trim().split(/\s+/)[0]

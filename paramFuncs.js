@@ -118,9 +118,7 @@ module.exports = {
 	// setVariableDefinitions now expects an object keyed by variableId rather than an array;
 	// instance.variables stays an array internally since it's built up with push()/find().
 	setVariableDefinitions: (instance) => {
-		instance.setVariableDefinitions(
-			Object.fromEntries(instance.variables.map((v) => [v.variableId, { name: v.name }])),
-		)
+		instance.setVariableDefinitions(Object.fromEntries(instance.variables.map((v) => [v.variableId, { name: v.name }])))
 	},
 
 	cancelFade: (instance, cmd, startNextQueuedFade = true) => {
@@ -255,13 +253,12 @@ module.exports = {
 		const RCP_SCNINFO_FIELDS = ['Status', 'Action', 'Address', 'Val', 'TxtVal', 'ScnName', 'ScnComment', 'ScnType']
 		const RCP_METER_FIELDS = ['Status', 'Action', 'Address', 'Name']
 		let cmds = []
-		let line = []
 		const lines = data.toString().split('\x0A')
 
 		for (let i = 0; i < lines.length; i++) {
 			// I'm not going to even try to explain this next line,
 			// but it basically pulls out the space-separated values, except for spaces that are inside quotes!
-			line = lines[i].match(/(?:[^\s"]+|"[^"]*")+/g)
+			let line = lines[i].match(/(?:[^\s"]+|"[^"]*")+/g)
 
 			// C0: 23 InputChLink rows in the shipped DM3 table are missing their leading "OK" token
 			// (space-indented to the same width instead) - confirmed unique to that one file, a data

@@ -48,7 +48,6 @@ const upg2xxto30x = (context, props) => {
 		console.log('Yamaha-RCP Upgrade: Checking action/feedback: ', action)
 
 		let changed = false
-		let rcpCmd = undefined
 		let newAction = JSON.parse(JSON.stringify(action))
 		let actionAddress = isAction ? action.actionId : action.feedbackId
 
@@ -66,7 +65,7 @@ const upg2xxto30x = (context, props) => {
 			newAction.options.Y = action.options.Y == 'a' ? 1 : 2
 		}
 
-		rcpCmd = paramFuncs.findRcpCmd(pseudoInstance, actionAddress)
+		let rcpCmd = paramFuncs.findRcpCmd(pseudoInstance, actionAddress)
 		if (rcpCmd !== undefined) {
 			if ((rcpCmd.Type == 'integer' || rcpCmd.Type == 'binary') && newAction.options.Val !== 'Toggle') {
 				newAction.options.Val = newAction.options.Val == -32768 ? '-Inf' : newAction.options.Val / rcpCmd.Scale
