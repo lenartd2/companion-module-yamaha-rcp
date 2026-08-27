@@ -37,7 +37,11 @@ const upg2xxto30x = (context, props) => {
 	}
 
 	console.log('Yamaha-RCP Upgrade: Config Ok, Getting Parameters...')
-	global.rcpCommands = paramFuncs.getParams(context, context.currentConfig)
+	// findRcpCmd() now reads instance.config/instance.rcpCommands instead of globals (C1) - there's
+	// no real module instance during an upgrade script, just this minimal context, so build the
+	// small stand-in object findRcpCmd actually needs.
+	const rcpCommands = paramFuncs.getParams(context, context.currentConfig)
+	const pseudoInstance = { config: context.currentConfig, rcpCommands }
 	console.log('\n')
 
 	let checkUpgrade = (action, isAction) => {
@@ -62,7 +66,7 @@ const upg2xxto30x = (context, props) => {
 			newAction.options.Y = action.options.Y == 'a' ? 1 : 2
 		}
 
-		rcpCmd = paramFuncs.findRcpCmd(actionAddress)
+		rcpCmd = paramFuncs.findRcpCmd(pseudoInstance, actionAddress)
 		if (rcpCmd !== undefined) {
 			if ((rcpCmd.Type == 'integer' || rcpCmd.Type == 'binary') && newAction.options.Val !== 'Toggle') {
 				newAction.options.Val = newAction.options.Val == -32768 ? '-Inf' : newAction.options.Val / rcpCmd.Scale

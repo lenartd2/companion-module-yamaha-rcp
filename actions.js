@@ -61,7 +61,7 @@ module.exports = {
 				allowCustom: true,
 			}
 			if (
-				(config.model == 'TF' || config.model == 'DM3' || config.model == 'DM7') &&
+				(instance.config.model == 'TF' || instance.config.model == 'DM3' || instance.config.model == 'DM7') &&
 				rcpCmd.Index >= 1000 &&
 				rcpCmd.Index < 2000
 			) {
@@ -167,10 +167,14 @@ module.exports = {
 			case 'binary':
 				if (actionName.startsWith('CustomFaderBank')) ValOpts.choices = rcpNames.customChNames
 				else if (actionName.endsWith('Color'))
-					ValOpts.choices = config.model == 'TF' ? rcpNames.chColorsTF : rcpNames.chColors
+					ValOpts.choices = instance.config.model == 'TF' ? rcpNames.chColorsTF : rcpNames.chColors
 				else if (actionName.endsWith('Icon')) ValOpts.choices = rcpNames.chIcons
 				else if (rcpNames[actionName] !== undefined) ValOpts.choices = rcpNames[actionName]
-				else if ((config.model == 'PM' || config.model == 'DM7') && rcpCmd.Index >= 1000 && rcpCmd.Index < 1010) {
+				else if (
+					(instance.config.model == 'PM' || instance.config.model == 'DM7') &&
+					rcpCmd.Index >= 1000 &&
+					rcpCmd.Index < 1010
+				) {
 					ValOpts = { ...ValOpts, type: 'textinput', regex: '/^([1-9][0-9]{0,2})\\.[0-9][0-9]$/' }
 				} else {
 					ValOpts = { ...ValOpts, type: 'textinput', regex: '' }
@@ -206,8 +210,8 @@ module.exports = {
 		let rcpCommand = {}
 		let actionName = ''
 
-		for (let i = 0; i < rcpCommands.length; i++) {
-			rcpCommand = rcpCommands[i]
+		for (let i = 0; i < instance.rcpCommands.length; i++) {
+			rcpCommand = instance.rcpCommands[i]
 			actionName = rcpCommand.Address.replace(/:/g, '_') // Change the : to _ as companion doesn't like colons in names
 			let newAction = module.exports.createAction(instance, rcpCommand)
 
@@ -217,7 +221,7 @@ module.exports = {
 
 			if (rcpCommand.RW.includes('w')) {
 				newAction.callback = async (action, context) => {
-					let foundCmd = paramFuncs.findRcpCmd(action.actionId) // Find which command
+					let foundCmd = paramFuncs.findRcpCmd(instance, action.actionId) // Find which command
 					let XArr = JSON.parse(String(action.options.X || 0))
 					if (!Array.isArray(XArr)) {
 						XArr = [XArr]
@@ -239,7 +243,7 @@ module.exports = {
 							if (paramFuncs.isLevel(foundCmd) && Number(actionCmd.Fade || 0) > 0) {
 								paramFuncs.fadeCmd(instance, actionCmd)
 							} else {
-								if (config.cancelFadesOnSceneRecall !== false && paramFuncs.isSceneRecall(foundCmd)) {
+								if (instance.config.cancelFadesOnSceneRecall !== false && paramFuncs.isSceneRecall(foundCmd)) {
 									paramFuncs.cancelAllFades(instance)
 								}
 								paramFuncs.cancelFade(instance, actionCmd)

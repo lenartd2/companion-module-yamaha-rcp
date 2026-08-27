@@ -2,7 +2,7 @@ const paramFuncs = require('./paramFuncs')
 
 const updateCurrentScene = (instance, sceneKey) => {
 	if (
-		config.cancelFadesOnSceneRecall !== false &&
+		instance.config.cancelFadesOnSceneRecall !== false &&
 		instance.currentSceneKey !== undefined &&
 		instance.currentSceneKey != sceneKey
 	) {
@@ -17,23 +17,23 @@ const formatSceneNumber = (rcpCmd, sceneNumber) => {
 	return sceneNumber
 }
 
-const getSceneAddress = (bank) => {
-	if (['TF', 'DM3', 'DM7'].includes(config.model)) return `scene_${bank == 1 ? 'a' : 'b'}`
+const getSceneAddress = (instance, bank) => {
+	if (['TF', 'DM3', 'DM7'].includes(instance.config.model)) return `scene_${bank == 1 ? 'a' : 'b'}`
 	return 'MIXER:Lib/Scene'
 }
 
 const requestSceneNames = (instance) => {
-	const sceneRecallCmd = global.rcpCommands.find((cmd) => cmd.Index == 1000 && cmd.RW.includes('w'))
+	const sceneRecallCmd = instance.rcpCommands.find((cmd) => cmd.Index == 1000 && cmd.RW.includes('w'))
 	if (!sceneRecallCmd) return
 
 	const sceneCount = Math.min(Math.max(parseInt(sceneRecallCmd.Max) || 1, 1), 99)
 	const bankCount = Math.max(parseInt(sceneRecallCmd.Y) || 1, 1)
 	for (let bank = 1; bank <= bankCount; bank++) {
-		const sceneAddress = getSceneAddress(bank)
+		const sceneAddress = getSceneAddress(instance, bank)
 		for (let sceneNumber = 1; sceneNumber <= sceneCount; sceneNumber++) {
 			const formattedSceneNumber = formatSceneNumber(sceneRecallCmd, sceneNumber)
 			if (sceneRecallCmd.Type == 'string') {
-				const quotedSceneNumber = config.model == 'PM' ? `"${formattedSceneNumber}"` : formattedSceneNumber
+				const quotedSceneNumber = instance.config.model == 'PM' ? `"${formattedSceneNumber}"` : formattedSceneNumber
 				instance.sendCmd(`ssinfot_ex ${sceneAddress} ${quotedSceneNumber}`)
 			} else {
 				instance.sendCmd(`ssinfo_ex ${sceneAddress} ${formattedSceneNumber}`)
@@ -59,11 +59,11 @@ module.exports = {
 			{ variableId: 'deviceName', name: 'Device Label' },
 			{ variableId: 'runMode', name: 'Device Run Mode' },
 		]
-		if (!['TF', 'DM3', 'DM7'].includes(config.model)) {
+		if (!['TF', 'DM3', 'DM7'].includes(instance.config.model)) {
 			instance.variables.push({ variableId: 'error', name: 'Device Status' })
 		}
 
-		if (config.model.slice(-2) != 'IO') {
+		if (instance.config.model.slice(-2) != 'IO') {
 			// Not TIO, RIO or RSio
 			instance.variables.push(
 				{ variableId: 'curScene', name: 'Current Scene Number' },
@@ -71,7 +71,7 @@ module.exports = {
 				{ variableId: 'curSceneComment', name: 'Current Scene Comment' },
 			)
 
-			switch (config.model) {
+			switch (instance.config.model) {
 				case 'CL/QL':
 					{
 						instance.variables.push(
@@ -121,9 +121,9 @@ module.exports = {
 		instance.sendCmd('devinfo productname') // Request Device Model
 		instance.sendCmd('devinfo devicename') // Request Device Label
 		instance.sendCmd('devstatus runmode') // Request Run Mode
-		if (!['TF', 'DM3', 'DM7'].includes(config.model)) instance.sendCmd('devstatus error') // Request error status
+		if (!['TF', 'DM3', 'DM7'].includes(instance.config.model)) instance.sendCmd('devstatus error') // Request error status
 
-		switch (config.model) {
+		switch (instance.config.model) {
 			case 'CL/QL': {
 				instance.sendCmd('sscurrent_ex MIXER:Lib/Scene') // Request Current Scene Number
 				break
@@ -179,7 +179,7 @@ module.exports = {
 				break
 			case 'sscurrent_ex':
 				// Request Current Scene Info once we know what scene we have
-				if (config.model == 'TF' || config.model == 'DM3') {
+				if (instance.config.model == 'TF' || instance.config.model == 'DM3') {
 					updateCurrentScene(instance, `${msg.Address}:${msg.Val}`)
 					instance.setVariableValues({
 						curScene: `${msg.Address.toUpperCase().slice(-1)}${msg.Val.toString().padStart(2, '0')}`,
@@ -195,7 +195,7 @@ module.exports = {
 				updateCurrentScene(instance, `${msg.Address}:${msg.Val}`)
 				instance.setVariableValues({ curScene: msg.Val })
 				// Request Current Scene Info once we know what scene we have
-				switch (config.model) {
+				switch (instance.config.model) {
 					case 'PM':
 						instance.sendCmd(`ssinfot_ex MIXER:Lib/Scene "${msg.Val}"`)
 						break
@@ -259,10 +259,10 @@ module.exports = {
 	fbCreatesVar: (instance, cmd, data, context) => {
 		const wtMtrTable = require('./wtMtrTable.json')
 		const paramFuncs = require('./paramFuncs.js')
-		let rcpCmd = paramFuncs.findRcpCmd(cmd.Address)
+		let rcpCmd = paramFuncs.findRcpCmd(instance, cmd.Address)
 
 		if (rcpCmd.Type == 'mtr') {
-			if (config.model == 'DM7') {
+			if (instance.config.model == 'DM7') {
 				data = Math.round(wtMtrTable[data])
 			} else {
 				data = data - 126

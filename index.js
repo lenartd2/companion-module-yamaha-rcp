@@ -25,8 +25,8 @@ class instance extends InstanceBase {
 	// Startup
 	async init(cfg) {
 		this.updateStatus(InstanceStatus.Connecting)
-		global.config = cfg
-		global.rcpCommands = []
+		this.config = cfg
+		this.rcpCommands = []
 		this.colorCommands = [] // Commands which have a color field
 		this.rcpPresets = []
 		this.dataStore = {} // status, Address (using ":"), X, Y, Val
@@ -43,8 +43,8 @@ class instance extends InstanceBase {
 
 	// Change in Configuration
 	async configUpdated(cfg) {
-		global.config = cfg
-		if (config.model) {
+		this.config = cfg
+		if (this.config.model) {
 			this.newConsole()
 		}
 	}
@@ -203,13 +203,13 @@ class instance extends InstanceBase {
 
 	// Whenever the console type changes, update the info
 	newConsole() {
-		this.log('info', `Device selected: ${config.model}`)
-		global.rcpCommands = paramFuncs.getParams(this, config)
+		this.log('info', `Device selected: ${this.config.model}`)
+		this.rcpCommands = paramFuncs.getParams(this, this.config)
 
 		actionFuncs.updateActions(this) // Re-do the actions once the console is chosen
 		varFuncs.initVars(this)
 		this.createPresets()
-		config.host = config.bonjour_host?.split(':')[0] || config.host
+		this.config.host = this.config.bonjour_host?.split(':')[0] || this.config.host
 		this.initTCP()
 	}
 
@@ -223,8 +223,8 @@ class instance extends InstanceBase {
 		this.socket?.destroy()
 		delete this.socket
 
-		if (config.host) {
-			this.socket = new TCPHelper(config.host, RCP_PORT)
+		if (this.config.host) {
+			this.socket = new TCPHelper(this.config.host, RCP_PORT)
 
 			this.socket.on('status_change', (status, message) => {
 				this.updateStatus(status, message)
@@ -241,11 +241,11 @@ class instance extends InstanceBase {
 				varFuncs.getVars(this)
 				this.queueTimer = {}
 				this.processCmdQueue()
-				if (config.metering) {
+				if (this.config.metering) {
 					this.startMeters()
 					this.meterTimer = setInterval(() => this.startMeters(), METER_REFRESH)
 				}
-				if (config.keepAlive) {
+				if (this.config.keepAlive) {
 					this.sendCmd(`scpmode keepalive ${KA_INTERVAL}`) // To possibly keep the device from closing the connection
 					this.kaTimer = setInterval(() => this.sendCmd('devstatus runmode'), KA_INTERVAL)
 				}
@@ -274,7 +274,7 @@ class instance extends InstanceBase {
 
 					for (let i = 0; i < receivedCmds.length; i++) {
 						let curCmd = JSON.parse(JSON.stringify(receivedCmds[i])) // deep clone
-						foundCmd = paramFuncs.findRcpCmd(curCmd.Address, curCmd.Action) // Find which command
+						foundCmd = paramFuncs.findRcpCmd(this, curCmd.Address, curCmd.Action) // Find which command
 
 						switch (curCmd.Action) {
 							case 'set':
@@ -326,7 +326,7 @@ class instance extends InstanceBase {
 	addToCmdQueue(cmd) {
 		clearTimeout(this.queueTimer)
 		let cmdToAdd = JSON.parse(JSON.stringify(cmd)) // Deep Clone
-		let rcpCmd = paramFuncs.findRcpCmd(cmdToAdd.Address)
+		let rcpCmd = paramFuncs.findRcpCmd(this, cmdToAdd.Address)
 		let i = this.cmdQueue.findIndex(
 			(c) =>
 				c.prefix == cmdToAdd.prefix &&
@@ -378,7 +378,7 @@ class instance extends InstanceBase {
 				nextCmd.Val = nextCmdVal
 			}
 
-			let msg = paramFuncs.fmtCmd(nextCmd)
+			let msg = paramFuncs.fmtCmd(this, nextCmd)
 			if (this.sendCmd(msg)) {
 				if (nextCmd.prefix == 'set') {
 					this.addToDataStore(nextCmd) // Update to latest value
@@ -394,7 +394,7 @@ class instance extends InstanceBase {
 
 	// Create the preset definitions
 	createPresets() {
-		var meterCmds = global.rcpCommands
+		var meterCmds = this.rcpCommands
 			.filter((c) => c.Action == 'mtrinfo')
 			.sort((a, b) => (a.Index == b.Index ? 0 : a.Index > b.Index ? 1 : -1))
 		this.rcpPresets = []
@@ -433,7 +433,7 @@ class instance extends InstanceBase {
 			return `$(${this.label}:${paramFuncs.getIndexedVariableName(rcpCmd, x - 1, y - 1)})`
 		}
 		const getLabelNameInfo = (rcpCmd, x, y) => {
-			const labelNameCmd = global.rcpCommands.find(
+			const labelNameCmd = this.rcpCommands.find(
 				(cmd) => cmd.Address == rcpCmd.Address.replace('/Fader/Level', '/Label/Name') && cmd.RW.includes('r'),
 			)
 			if (!labelNameCmd) return undefined
@@ -450,7 +450,7 @@ class instance extends InstanceBase {
 			}
 		}
 		const getCueInfo = (faderName, x) => {
-			const cueCmd = global.rcpCommands.find(
+			const cueCmd = this.rcpCommands.find(
 				(cmd) => cmd.Address == `MIXER:Current/Cue/${faderName}/On` && cmd.RW.includes('w'),
 			)
 			if (!cueCmd) return undefined
@@ -493,7 +493,7 @@ class instance extends InstanceBase {
 			}
 			return monoBeforeStereoOrder[faderName] ?? 100
 		}
-		const faderCmds = global.rcpCommands
+		const faderCmds = this.rcpCommands
 			.filter((c) => paramFuncs.isFaderLevel(c) && c.RW.includes('w'))
 			.sort((a, b) => {
 				const rankA = getFaderSortRank(a)
@@ -502,7 +502,7 @@ class instance extends InstanceBase {
 				return a.Index == b.Index ? 0 : a.Index > b.Index ? 1 : -1
 			})
 		const getFaderOnInfo = (rcpCmd, x, y) => {
-			const faderOnCmd = global.rcpCommands.find(
+			const faderOnCmd = this.rcpCommands.find(
 				(cmd) => cmd.Address == rcpCmd.Address.replace('/Fader/Level', '/Fader/On') && cmd.RW.includes('w'),
 			)
 			if (!faderOnCmd) return undefined
@@ -545,7 +545,7 @@ class instance extends InstanceBase {
 				rcpCmd.Address.replace('/Fader/Level', '/Select'),
 				rcpCmd.Address.replace('/Fader/Level', '/PatchSelect'),
 			]
-			const faderSelectCmd = global.rcpCommands.find(
+			const faderSelectCmd = this.rcpCommands.find(
 				(cmd) => selectAddresses.includes(cmd.Address) && cmd.RW.includes('w'),
 			)
 			if (!faderSelectCmd) return undefined
@@ -574,15 +574,15 @@ class instance extends InstanceBase {
 					: undefined,
 			}
 		}
-		const sceneRecallCmd = global.rcpCommands.find((c) => c.Index == 1000 && c.RW.includes('w'))
-		const sceneRecallIncCmd = global.rcpCommands.find((c) => c.Index == 1010 && c.RW.includes('w'))
-		const sceneRecallDecCmd = global.rcpCommands.find((c) => c.Index == 1011 && c.RW.includes('w'))
+		const sceneRecallCmd = this.rcpCommands.find((c) => c.Index == 1000 && c.RW.includes('w'))
+		const sceneRecallIncCmd = this.rcpCommands.find((c) => c.Index == 1010 && c.RW.includes('w'))
+		const sceneRecallDecCmd = this.rcpCommands.find((c) => c.Index == 1011 && c.RW.includes('w'))
 		const formatSceneNumber = (rcpCmd, sceneNumber) => {
 			if (rcpCmd.Type == 'string') return `${sceneNumber}.00`
 			return sceneNumber
 		}
 		const getSceneCurrentAddress = (bank) => {
-			if (['TF', 'DM3', 'DM7'].includes(config.model)) return `scene_${bank == 1 ? 'a' : 'b'}`
+			if (['TF', 'DM3', 'DM7'].includes(this.config.model)) return `scene_${bank == 1 ? 'a' : 'b'}`
 			return 'MIXER:Lib/Scene'
 		}
 		const getSceneBankLabel = (bank) => (bank == 1 ? 'A' : 'B')
@@ -1237,7 +1237,7 @@ class instance extends InstanceBase {
 			c = c.trim()
 			this.log(
 				'debug',
-				`[${new Date().toJSON()}] Sending :    '${c}' to ${this.getVariableValue('modelName')} @ ${config.host}`,
+				`[${new Date().toJSON()}] Sending :    '${c}' to ${this.getVariableValue('modelName')} @ ${this.config.host}`,
 			)
 
 			if (this.socket !== undefined && this.socket.isConnected) {
@@ -1289,7 +1289,7 @@ class instance extends InstanceBase {
 				data = this.dataStore[cmd.Address][cmd.X][cmd.Y]
 				return data
 			}
-			let rcpCmd = paramFuncs.findRcpCmd(cmd.Address)
+			let rcpCmd = paramFuncs.findRcpCmd(this, cmd.Address)
 			if (rcpCmd !== undefined && rcpCmd.RW.includes('r')) {
 				cmd.prefix = 'get'
 				this.addToCmdQueue(cmd)
@@ -1301,7 +1301,7 @@ class instance extends InstanceBase {
 
 	// Start requesting meter data
 	startMeters() {
-		let mtrFeedbacks = rcpCommands.filter((f) => f.Type == 'mtr')
+		let mtrFeedbacks = this.rcpCommands.filter((f) => f.Type == 'mtr')
 		mtrFeedbacks.forEach((rcpCmd) => {
 			let pickoffCount = rcpCmd.Pickoff ? rcpCmd.Pickoff.split('|').length : 1
 			for (let y = 0; y < pickoffCount; y++) {

@@ -46,7 +46,7 @@ module.exports = {
 
 		newFeedback.callback = async (feedback, context) => {
 			const varFuncs = require('./variables.js')
-			let rcpCmd = paramFuncs.findRcpCmd(feedback.feedbackId)
+			let rcpCmd = paramFuncs.findRcpCmd(instance, feedback.feedbackId)
 			if (rcpCmd === undefined) return
 
 			let options = await paramFuncs.parseOptions(context, feedback.options)
@@ -54,7 +54,11 @@ module.exports = {
 
 			let fb = options
 			fb.Address = rcpCmd.Address
-			fb.Val = await paramFuncs.parseVal(context, fb)
+			// parseVal() needs the real instance (config/rcpCommands/getFromDataStore), not the
+			// feedback callback context - passing context here was a latent bug (C1 cleanup surfaced
+			// it) that happened to be harmless only because parseVal's relative-value branch, the one
+			// place it needed something callable on this argument, is never reached for feedbacks.
+			fb.Val = await paramFuncs.parseVal(instance, fb)
 
 			let data = instance.getFromDataStore(fb)
 			if (data == undefined) return

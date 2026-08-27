@@ -3,14 +3,14 @@ const DEFAULT_FADE_STEP_DURATION_MS = 40
 const FADE_STEP_COALESCE_MS = 10
 const FADER_MIN = -9000
 
-const getMaxActiveFades = () =>
-	Math.min(Math.max(parseInt(config.maxConcurrentFades || DEFAULT_MAX_ACTIVE_FADES), 1), 32)
+const getMaxActiveFades = (instance) =>
+	Math.min(Math.max(parseInt(instance.config.maxConcurrentFades || DEFAULT_MAX_ACTIVE_FADES), 1), 32)
 
-const getBaseFadeStepDuration = () =>
-	Math.min(Math.max(parseInt(config.fadeStepInterval || DEFAULT_FADE_STEP_DURATION_MS), 10), 500)
+const getBaseFadeStepDuration = (instance) =>
+	Math.min(Math.max(parseInt(instance.config.fadeStepInterval || DEFAULT_FADE_STEP_DURATION_MS), 10), 500)
 
-const getFadeLimitMode = () => {
-	if (['cancel', 'queue', 'rateLimit'].includes(config.fadeLimitMode)) return config.fadeLimitMode
+const getFadeLimitMode = (instance) => {
+	if (['cancel', 'queue', 'rateLimit'].includes(instance.config.fadeLimitMode)) return instance.config.fadeLimitMode
 	return 'queue'
 }
 
@@ -27,7 +27,7 @@ const activeFadeCount = (instance) => {
 const startQueuedFades = (instance) => {
 	getFadeStore(instance)
 
-	while (activeFadeCount(instance) < getMaxActiveFades() && instance.fadeQueue.length > 0) {
+	while (activeFadeCount(instance) < getMaxActiveFades(instance) && instance.fadeQueue.length > 0) {
 		const fade = instance.fadeQueue.shift()
 		if (instance.fadeTimers[fade.key] != undefined) {
 			fade.start()
@@ -36,10 +36,11 @@ const startQueuedFades = (instance) => {
 }
 
 const getFadeStepDuration = (instance) => {
-	const maxActiveFades = getMaxActiveFades()
+	const maxActiveFades = getMaxActiveFades(instance)
 	const fadeCount = activeFadeCount(instance)
-	const rateLimitMultiplier = getFadeLimitMode() == 'rateLimit' ? Math.max(Math.ceil(fadeCount / maxActiveFades), 1) : 1
-	return getBaseFadeStepDuration() * rateLimitMultiplier
+	const rateLimitMultiplier =
+		getFadeLimitMode(instance) == 'rateLimit' ? Math.max(Math.ceil(fadeCount / maxActiveFades), 1) : 1
+	return getBaseFadeStepDuration(instance) * rateLimitMultiplier
 }
 
 module.exports = {
@@ -318,11 +319,11 @@ module.exports = {
 	},
 
 	// Create the proper command string to send to the device
-	fmtCmd: (cmdToFmt) => {
+	fmtCmd: (instance, cmdToFmt) => {
 		if (cmdToFmt == undefined) return
 
 		let cmdName = cmdToFmt.Address
-		let rcpCmd = module.exports.findRcpCmd(cmdName)
+		let rcpCmd = module.exports.findRcpCmd(instance, cmdName)
 		let prefix = cmdToFmt.prefix
 		let cmdStart = prefix
 		let options = { X: cmdToFmt.X, Y: cmdToFmt.Y, Val: cmdToFmt.Val }
@@ -330,7 +331,7 @@ module.exports = {
 		if (rcpCmd.Index >= 1000 && rcpCmd.Index < 1010) {
 			cmdStart = prefix == 'set' ? 'ssrecall' : 'sscurrent'
 			if (rcpCmd.Index == 1001) cmdStart = 'ssupdate' // store command
-			switch (config.model) {
+			switch (instance.config.model) {
 				case 'TF':
 				case 'DM3':
 					cmdStart = cmdStart + '_ex'
@@ -357,22 +358,22 @@ module.exports = {
 			cmdStart = 'event'
 			cmdName = cmdName.replace('/Bank', '') // Remove "Bank" from command
 			options.X = ''
-			options.Y = config.model == 'DM7' ? `scene_${options.Y == 0 ? 'a' : 'b'}` : ''
+			options.Y = instance.config.model == 'DM7' ? `scene_${options.Y == 0 ? 'a' : 'b'}` : ''
 		}
 
 		if (rcpCmd.Index >= 2000) {
 			// Meters
-			if (!config.metering) return
+			if (!instance.config.metering) return
 			cmdStart = 'mtrstart'
 			cmdName = cmdName.replace('/Meter', '') // Remove "Meter" from the beginning of the command
-			if (config.model == 'TIO' || config.model == 'RIO' || config.model == 'RSIO') {
+			if (['TIO', 'RIO', 'RSIO'].includes(instance.config.model)) {
 				cmdName = cmdName.replace(/\/.*Ch/, '/Dev')
 			}
 			if (rcpCmd.Pickoff) {
 				let pickoffs = rcpCmd.Pickoff.split('|')
 				cmdName += '/' + pickoffs[options.Y] // Add the Pickoff Parameter
 			}
-			options.X = config.meterSpeed
+			options.X = instance.config.meterSpeed
 			options.Y = ''
 		}
 
@@ -416,10 +417,12 @@ module.exports = {
 		}
 	},
 
-	parseVal: (context, cmd) => {
+	// `instance` must be the real module instance, not a Companion callback context - it needs
+	// instance.config/instance.rcpCommands (via findRcpCmd) and instance.getFromDataStore.
+	parseVal: (instance, cmd) => {
 		const hpf = require('./hpf')
 		let val = cmd.Val
-		let rcpCmd = module.exports.findRcpCmd(cmd.Address)
+		let rcpCmd = module.exports.findRcpCmd(instance, cmd.Address)
 
 		if (rcpCmd.Type == 'string' || rcpCmd.Type == 'binary') {
 			return val
@@ -442,7 +445,7 @@ module.exports = {
 
 		if (!module.exports.isRelAction(cmd)) return val //Only continue if it's a relative action
 
-		let data = context.getFromDataStore(cmd)
+		let data = instance.getFromDataStore(cmd)
 		if (data === undefined) return undefined
 
 		let curVal = parseInt(data)
@@ -470,7 +473,7 @@ module.exports = {
 	},
 
 	fadeCmd: (instance, cmd) => {
-		let rcpCmd = module.exports.findRcpCmd(cmd.Address)
+		let rcpCmd = module.exports.findRcpCmd(instance, cmd.Address)
 		if (!module.exports.isLevel(rcpCmd)) {
 			module.exports.cancelFade(instance, cmd)
 			instance.addToCmdQueue(cmd)
@@ -560,13 +563,13 @@ module.exports = {
 			step()
 		}
 
-		const fadeLimitMode = getFadeLimitMode()
-		if (activeFadeCount(instance) < getMaxActiveFades() || fadeLimitMode == 'rateLimit') {
+		const fadeLimitMode = getFadeLimitMode(instance)
+		if (activeFadeCount(instance) < getMaxActiveFades(instance) || fadeLimitMode == 'rateLimit') {
 			startFade()
 		} else if (fadeLimitMode == 'cancel') {
 			instance.log(
 				'warn',
-				`Cannot fade ${cmd.Address}; maximum of ${getMaxActiveFades()} active fades is already running`,
+				`Cannot fade ${cmd.Address}; maximum of ${getMaxActiveFades(instance)} active fades is already running`,
 			)
 		} else {
 			instance.fadeTimers[fadeKey] = {
@@ -580,16 +583,19 @@ module.exports = {
 		}
 	},
 
-	findRcpCmd: (cmdName, cmdAction = '') => {
+	// `instance` needs instance.config and instance.rcpCommands - see C1 in PLAN.md: these used to
+	// be `global.config`/`global.rcpCommands`, which meant a second configured instance (a DM3 plus
+	// a Rio stagebox, say) would silently clobber the first's state.
+	findRcpCmd: (instance, cmdName, cmdAction = '') => {
 		let rcpCmd = undefined
 		if (cmdName != undefined) {
 			if (cmdAction == 'mtr') {
 				cmdName = cmdName.replace('Current/', 'Current/Meter/')
 
-				if (config.model == 'TIO' || config.model == 'RIO') {
+				if (instance.config.model == 'TIO' || instance.config.model == 'RIO') {
 					cmdName = cmdName.replace('/Dev/OutputLevel', '/OutCh/OutputLevel')
-					cmdName = cmdName.replace(/\/Dev.*/, config.model == 'TIO' ? '/InCh/InputLevel' : '/InCh')
-				} else if (config.model == 'RSIO') {
+					cmdName = cmdName.replace(/\/Dev.*/, instance.config.model == 'TIO' ? '/InCh/InputLevel' : '/InCh')
+				} else if (instance.config.model == 'RSIO') {
 					cmdName = cmdName.replace('/Dev', cmdName.includes('InputLevel') ? '/InCh' : '/OutCh')
 				} else {
 					let lastSlash = cmdName.lastIndexOf('/')
@@ -597,7 +603,7 @@ module.exports = {
 				}
 			}
 			let cmdToFind = cmdName.replace(/:/g, '_')
-			rcpCmd = rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
+			rcpCmd = instance.rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
 		}
 		return rcpCmd
 	},
