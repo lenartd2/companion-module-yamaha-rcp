@@ -1,4 +1,16 @@
 module.exports = {
+	// Parses an X/Y option that may be a single value or a "[1,2,3]" JSON array (to fire an action
+	// on multiple channels at once). Falls back to treating unparseable input as a single literal
+	// value rather than throwing - see C3.
+	parseMultiValue: (rawValue) => {
+		try {
+			const parsed = JSON.parse(String(rawValue))
+			return Array.isArray(parsed) ? parsed : [parsed]
+		} catch {
+			return [rawValue]
+		}
+	},
+
 	// Create single Action/Feedback
 	createAction: (instance, rcpCmd) => {
 		const rcpNames = require('./rcpNames.json')
@@ -222,14 +234,25 @@ module.exports = {
 			if (rcpCommand.RW.includes('w')) {
 				newAction.callback = async (action, context) => {
 					let foundCmd = paramFuncs.findRcpCmd(instance, action.actionId) // Find which command
-					let XArr = JSON.parse(String(action.options.X || 0))
-					if (!Array.isArray(XArr)) {
-						XArr = [XArr]
+
+					// C8: Scene Store overwrites a scene on the console with no confirmation and no
+					// undo. Companion has no native "confirm before running" for actions, so gate it
+					// behind a config toggle that defaults off instead - an accidental press does
+					// nothing (loudly, in the log) unless the user has deliberately opted in.
+					if (paramFuncs.isSceneStore(foundCmd) && !instance.config.allowSceneStore) {
+						instance.log(
+							'warn',
+							`Scene Store action ignored: enable "Allow Scene Store?" in the connection config first. This overwrites a scene on the console with no confirmation and no undo.`,
+						)
+						return
 					}
-					let YArr = JSON.parse(String(action.options.Y || 0))
-					if (!Array.isArray(YArr)) {
-						YArr = [YArr]
-					}
+
+					// X/Y support a "[1,2,3]" array syntax to fire the action on multiple channels.
+					// A bare JSON.parse() here throws on any other typed-in text (C3) and silently
+					// kills the whole action with no feedback to the user; fall back to treating the
+					// raw value as a single literal instead of failing outright.
+					let XArr = module.exports.parseMultiValue(action.options.X || 0)
+					let YArr = module.exports.parseMultiValue(action.options.Y || 0)
 
 					for (let X of XArr) {
 						let opt = action.options
