@@ -769,7 +769,11 @@ in the UI; no leaked timers; `eslint` clean.
   `feedbacks.js` was passing the Companion feedback context into `parseVal()` instead of the real
   instance — harmless before only because the one thing that context was needed for
   (`getFromDataStore`, for relative/Toggle actions) is never reached for feedbacks.
-- **C2** — `destroy()` now clears `kaTimer` alongside the other timers.
+- **C2** — `destroy()` now clears `kaTimer` alongside the other timers. Live-verified 2026-08-27
+  directly against the console (see below) rather than through Companion: the built module's own
+  `sendCmd`/`initTCP`/`destroy` methods were driven straight over a real TCP connection to
+  `192.168.128.9`, `destroy()` called, then no traffic sent for 13s (> the 10s `KA_INTERVAL`) —
+  confirmed `kaTimer` itself reports `_destroyed: true` and zero commands fire in that window.
 - **C3** — the action callback's bare `JSON.parse()` on X/Y (to support the `[1,2,3]` multi-channel
   syntax) threw on any other typed-in text and silently killed the whole action. Now falls back to
   treating unparseable input as a single literal value instead.
@@ -791,10 +795,12 @@ in the UI; no leaked timers; `eslint` clean.
   endings throughout, for reasons predating this project); the other 13 were small pre-existing
   dead-code/safety nits, none behavioural. `yarn lint` now passes clean.
 
-**Not done — still needs the mixer:** C2's fix (no leaked KeepAlive timer) is code-verified but not
-live-verified — the actual regression test (enable KeepAlive, delete the connection, confirm
-`devstatus runmode` stops firing) needs the same live Companion access as Phase 1's remaining
-checks. Do it next time at the mixer.
+**All Phase 2 fixes are now live-verified, including C2** (closed 2026-08-27 — see the C2 bullet
+above). The KeepAlive timer logic lives entirely in `index.js`'s own socket/timer code, not
+anything Companion-specific, so this didn't need a real Companion install: the built module class
+was driven directly (methods copied by reference off the prototype onto a plain object, since
+`InstanceBase` blocks bare `new`/`Object.create` construction) over a real connection to the
+console. No regressions found.
 
 **Deliberately still open, unchanged from before this phase:** C4 was already fixed as a side
 effect of Phase 1 (the two implicit-globals it names were exactly what strict-mode ESM bundling
@@ -927,17 +933,17 @@ minimum before calling any phase done:
    the `St` stereo pair this item is actually about. Expect this to still fail: C6 (metering
    reconstructed from a synthetic `Pickoff` model instead of the console's real flat enumeration)
    is unchanged, deliberately deferred to Phase 4.
-6. ⬜ Delete the connection; confirm no timers keep firing (C2). Not tested — and expect this one
-   to actually fail: C2 (KeepAlive timer not cleared on `destroy()`) was correctly identified as
-   still-open by the 2026-08-25 audit (`YamahaRCP/audit/AUDIT.md`) and was never in Phase 1's
-   scope to fix.
+6. ✅ Delete the connection; confirm no timers keep firing (C2). This was never Phase 1's to fix
+   (correctly identified as still-open by the 2026-08-25 audit, `YamahaRCP/audit/AUDIT.md`) — it's
+   listed here for completeness. Fixed and live-verified as part of Phase 2, 2026-08-27: see
+   Phase 2's write-up above.
 
 **Net: Phase 1's own exit bar ("loads and runs... existing pages behave identically") is closed,
-within Phase 1's actual scope.** 4 of 6 items confirmed (2026-08-25 and 2026-08-27 sessions); the
-remaining 2 (item 5, stereo metering / C6; item 6, connection-deletion timer leak / C2) are
-pre-existing bugs Phase 1 never intended to fix, correctly deferred to Phase 4 and Phase 2
-respectively — their continued failure is expected, not outstanding migration work. **Phase 1 can
-now be considered genuinely done.**
+within Phase 1's actual scope.** 5 of 6 items confirmed live (2026-08-25 through 2026-08-27
+sessions, item 6 via Phase 2's own testing); the remaining item (5, stereo metering / C6) is a
+pre-existing bug Phase 1 never intended to fix, correctly deferred to Phase 4 — its continued
+failure is expected, not outstanding migration work. **Phase 1 can now be considered genuinely
+done.**
 
 Use `tools/rcp-probe.js` to read ground truth from the console at any point — it's read-only and
 safe to run alongside Companion, since the DM3 accepts multiple simultaneous control connections.

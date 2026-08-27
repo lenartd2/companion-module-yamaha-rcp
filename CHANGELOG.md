@@ -27,7 +27,9 @@ a side effect of Phase 1; C6 stays deferred to Phase 4).
   `init()`/`newConsole()`. Both now live on the instance itself. Verified directly: two
   simultaneously-configured instances produce completely independent action/feedback sets.
 - **The KeepAlive timer leaked on `destroy()`** - a deleted connection with KeepAlive enabled kept
-  sending `devstatus runmode` indefinitely. Now cleared alongside the other timers.
+  sending `devstatus runmode` indefinitely. Now cleared alongside the other timers. Verified live
+  against a real console: after `destroy()`, no further commands are sent even after waiting past
+  the keepalive interval.
 - **A malformed X/Y option silently killed the whole action.** The multi-channel `[1,2,3]` array
   syntax was implemented as a bare `JSON.parse()`; anything else typed into that field threw
   inside the callback with no visible error. Now falls back to treating unparseable input as a
