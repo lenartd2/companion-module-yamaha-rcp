@@ -57,9 +57,16 @@ doesn't do enough**. Both turned out to be real, and both are diagnosable in the
 | Model | Yamaha **DM3** (the Dante-equipped model, not DM3 STANDARD) |
 | Firmware | **V3.00** |
 | Device name | `Y001-Yamaha-DM3-006b40` |
-| **RCP control** | **`192.168.128.24` : TCP 49280** |
-| Dante interface | `192.168.128.12` (advertises `_netaudio-arc._udp` as `BROOKLYN3-006b40.local`) |
+| **RCP control** | **`192.168.128.9` : TCP 49280** — see note below |
+| Dante interface | `192.168.128.12` (advertises `_netaudio-arc._udp` as `BROOKLYN3-006b40.local`) — unconfirmed since the address change, worth re-checking |
 | Run mode | `normal` |
+
+**The RCP control address changed from `192.168.128.24` (original research) to `192.168.128.9`**,
+noticed 2026-08-25 and re-confirmed live (`devinfo devicename` still answers
+`Y001-Yamaha-DM3-006b40`, same physical console, firmware unchanged). Whether the Network port is
+on a static IP or DHCP isn't recorded anywhere — if it's DHCP, this can drift again and **every
+`192.168.128.24` reference anywhere in Companion's connection config, or in a script, needs
+checking**, not just this document. Worth asking whoever manages the studio network which it is.
 
 **The DM3 has two separate network interfaces.** The *Network* port ("For Mixer Control" in
 `SETUP → NETWORK`) carries RCP, StageMix, MonitorMix and OSC. The *Dante* port carries audio and
@@ -144,14 +151,14 @@ a live console overwrites a scene with no confirmation and no undo.
 
 ```bash
 # identify only
-node tools/rcp-probe.js 192.168.128.24
+node tools/rcp-probe.js 192.168.128.9
 
 # full enumeration, saved
-node tools/rcp-probe.js 192.168.128.24 \
+node tools/rcp-probe.js 192.168.128.9 \
     --sweep=prminfo:0-400 --sweep=mtrinfo:0-80 --out=dump.txt
 
 # ad-hoc reads
-node tools/rcp-probe.js 192.168.128.24 \
+node tools/rcp-probe.js 192.168.128.9 \
     --raw='get MIXER:Current/InCh/Label/Name 0 0;sscurrent_ex scene_a'
 ```
 
@@ -604,7 +611,7 @@ spread is equivalent and far cheaper.
 
 ### 7.8 Performance targets
 
-Measure against the real console at `192.168.128.24`. Re-measure **after Phase 1** before doing any
+Measure against the real console at `192.168.128.9`. Re-measure **after Phase 1** before doing any
 of §7.2–§7.7 — some may already be under target once the IPC storm is gone.
 
 | Metric | Now (est.) | Target |
