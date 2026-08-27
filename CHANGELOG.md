@@ -3,6 +3,45 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.8.0] - 2026-08-27
+
+Phase 2: correctness and safety fixes (C0–C3, C5, C7, C8 from PLAN.md §8; C4 was already fixed as
+a side effect of Phase 1; C6 stays deferred to Phase 4).
+
+### Added
+
+- **New config option: "Allow Scene Store?"** (default **off**). Companion has no native
+  "confirm before running" for actions, so storing a scene - which overwrites it on the console
+  with no confirmation and no undo - is now gated behind this checkbox. An accidental Scene Store
+  press does nothing (logged as a warning) unless deliberately enabled.
+
+### Fixed
+
+- **23 `InputChLink` parameters were silently dropped.** The shipped DM3 parameter table has them
+  missing their leading `OK` token (space-indented to the same width instead) - a data typo, not
+  anything the console itself ever sends. The parser now restores the implicit token; all 23
+  actions/feedbacks now appear.
+- **A second configured instance could silently corrupt the first's state.** `global.config` and
+  `global.rcpCommands` were shared mutable slots read throughout the module; a DM3 plus a Rio
+  stagebox (or any two instances) would clobber each other's config and parameter table on every
+  `init()`/`newConsole()`. Both now live on the instance itself. Verified directly: two
+  simultaneously-configured instances produce completely independent action/feedback sets.
+- **The KeepAlive timer leaked on `destroy()`** - a deleted connection with KeepAlive enabled kept
+  sending `devstatus runmode` indefinitely. Now cleared alongside the other timers.
+- **A malformed X/Y option silently killed the whole action.** The multi-channel `[1,2,3]` array
+  syntax was implemented as a bare `JSON.parse()`; anything else typed into that field threw
+  inside the callback with no visible error. Now falls back to treating unparseable input as a
+  single literal value.
+- **Repeated network errors during an outage could flood the log.** The reconnect itself was
+  already automatic as of the Phase 1 `TCPHelper` upgrade; this only dedupes the logging - a
+  repeated identical error message is now logged once, not once per retry.
+- `parseData()`'s `'mtr'` case mutated a shared field-name array in place instead of copying it.
+  Harmless under every current call site (each only ever processes one line at a time), but no
+  longer relies on that being true.
+- **`yarn lint` now actually runs and passes.** `eslint`/`prettier` weren't installed despite
+  being expected as peer dependencies; added both plus a project `eslint.config.mjs`. Also cleaned
+  up the ~13 real (all pre-existing, all non-behavioural) issues this surfaced once it could run.
+
 ## [3.7.0] - 2026-08-25
 
 Phase 1 of the broadcast-studio rework: migrates the module from Companion module API 1.12

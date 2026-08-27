@@ -630,6 +630,10 @@ of §7.2–§7.7 — some may already be under target once the IPC storm is gone
 
 ## 8. Findings: correctness
 
+**C0–C3, C5, C7, C8 fixed 2026-08-27 (Phase 2); C4 fixed as a side effect of Phase 1; C6 stays
+open, deliberately, for Phase 4.** Table left as originally written (the bugs, as found) — see the
+Phase 2 write-up in §9 for what changed and how each was verified.
+
 | # | Issue | Location / evidence |
 |---|---|---|
 | **C0** | **23 shipped DM3 parameters are silently dead.** Lines 123–145 of `DM3 Parameters-2.txt` (indices 122–144 — the entire `InputChLink` block) are missing their leading `OK ` and are space-indented. `parseData`'s guard is `['OK','OKM','NOTIFY'].indexOf(line[0].toUpperCase()) !== -1`, so the first token is `prminfo` and every one of those rows is dropped. They exist in the file, they exist on the console, the module cannot see them. **One-line parser fix unlocks 23 parameters.** | confirmed by diffing the live dump against the shipped table |
@@ -744,13 +748,58 @@ DM3 — §10.4's manual test list is still the real gate.
   "no override" (which is what the original author clearly intended) couldn't be confirmed without a
   live host. Watch for it specifically in §10.4 step 1–2.
 
-### Phase 2 — Correctness and safety
+### Phase 2 — Correctness and safety — **DONE (code), pending one live check**
 
 C0 first — it's a one-line parser fix that unlocks the entire `InputChLink` block. Then C1–C5, C7.
 C1 (de-globalising) is the largest diff and unblocks running a console and a stagebox side by side.
 
 **Exit:** two instances configured simultaneously without interference; `InputChLink` actions appear
 in the UI; no leaked timers; `eslint` clean.
+
+**Closed 2026-08-27:**
+
+- **C0** — the parser silently dropped 23 `InputChLink` rows (missing their leading `OK` token,
+  space-indented instead). One guard clause restores it. Verified directly: 161 → 184 parsed
+  commands, all 23 confirmed present in the generated action set.
+- **C1** — `global.config`/`global.rcpCommands` moved onto the instance
+  (`this.config`/`this.rcpCommands`); `findRcpCmd`, `fmtCmd`, and the fade-limit helpers all gained
+  an `instance` parameter, threaded through every call site across all 6 files. Verified directly:
+  two instances configured back-to-back (DM3, 184 params; RIO, 10 params) produce completely
+  independent action/feedback sets with zero crosstalk. One related bug fixed along the way:
+  `feedbacks.js` was passing the Companion feedback context into `parseVal()` instead of the real
+  instance — harmless before only because the one thing that context was needed for
+  (`getFromDataStore`, for relative/Toggle actions) is never reached for feedbacks.
+- **C2** — `destroy()` now clears `kaTimer` alongside the other timers.
+- **C3** — the action callback's bare `JSON.parse()` on X/Y (to support the `[1,2,3]` multi-channel
+  syntax) threw on any other typed-in text and silently killed the whole action. Now falls back to
+  treating unparseable input as a single literal value instead.
+- **C5** — `parseData`'s `'mtr'` case aliased and mutated the shared `RCP_METER_FIELDS` array
+  in place instead of copying it. Harmless today only because every call site happens to invoke
+  `parseData()` one line at a time; fixed so that stops being load-bearing.
+- **C7** — the reconnect half was already free: the Companion 5/API 2.1 `TCPHelper` (Phase 1)
+  reconnects automatically by default, we just weren't relying on it being new behaviour. Fixed the
+  other half — repeated identical network errors during an outage no longer spam the log, only the
+  first occurrence of a given error message logs until it either changes or the connection recovers.
+- **C8, promoted from Phase 5 per the 2026-08-25 audit's recommendation** (`YamahaRCP/audit/AUDIT.md`)
+  **given this console's real, named, hand-built scenes.** Companion has no native "confirm before
+  running" for actions, so Scene Store (index 1001, `ssupdate_ex`) is now gated behind a new
+  "Allow Scene Store?" config checkbox that defaults to **off** — an accidental press does nothing
+  (logged as a warning) unless the user has deliberately opted in. Verified directly in both states.
+- **eslint clean** — `eslint`/`prettier` weren't even installed despite `@companion-module/tools`
+  expecting them; added both plus `eslint.config.mjs` calling the shared config the tools package
+  exposes for this. `--fix` cleared 93 of 106 problems automatically (feedbacks.js had Windows line
+  endings throughout, for reasons predating this project); the other 13 were small pre-existing
+  dead-code/safety nits, none behavioural. `yarn lint` now passes clean.
+
+**Not done — still needs the mixer:** C2's fix (no leaked KeepAlive timer) is code-verified but not
+live-verified — the actual regression test (enable KeepAlive, delete the connection, confirm
+`devstatus runmode` stops firing) needs the same live Companion access as Phase 1's remaining
+checks. Do it next time at the mixer.
+
+**Deliberately still open, unchanged from before this phase:** C4 was already fixed as a side
+effect of Phase 1 (the two implicit-globals it names were exactly what strict-mode ESM bundling
+turned into load-time `ReferenceError`s). C6 (DM3 metering rebuilt from the console's real flat
+enumeration) stays Phase 4 scope, untouched here.
 
 ### Phase 3 — Performance
 

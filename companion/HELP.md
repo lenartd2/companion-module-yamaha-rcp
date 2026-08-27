@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.7.0
+## Yamaha Remote Control Protocol - v3.8.0
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -29,6 +29,13 @@ Note that this module only works to connected hardware. It does not work with th
 > Scene recalls triggered from Companion actions or Companion scene recall presets are handled correctly and will cancel active fades before the recall is sent.
 
 > Keep **Cancel fades on scene recall?** enabled unless you have a specific reason not to. The conservative defaults are 6 maximum concurrent fades, a 40 ms fade step interval, and an 80 ms metering interval for CL/QL consoles.
+
+**SCENE STORE**
+
+> Storing a scene overwrites it on the console with the current state - there is no confirmation
+> and no undo. **v3.8.0:** any Scene Store action is now ignored (and logged as a warning) unless
+> **Allow Scene Store?** is checked in the connection's config. It defaults to off - turn it on
+> deliberately if you actually need a Scene Store button.
 
 **VARIABLES**
 
