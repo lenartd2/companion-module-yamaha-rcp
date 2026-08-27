@@ -63,10 +63,14 @@ doesn't do enough**. Both turned out to be real, and both are diagnosable in the
 
 **The RCP control address changed from `192.168.128.24` (original research) to `192.168.128.9`**,
 noticed 2026-08-25 and re-confirmed live (`devinfo devicename` still answers
-`Y001-Yamaha-DM3-006b40`, same physical console, firmware unchanged). Whether the Network port is
-on a static IP or DHCP isn't recorded anywhere — if it's DHCP, this can drift again and **every
-`192.168.128.24` reference anywhere in Companion's connection config, or in a script, needs
-checking**, not just this document. Worth asking whoever manages the studio network which it is.
+`Y001-Yamaha-DM3-006b40`, same physical console, firmware unchanged). This is **DHCP with a MAC
+reservation, not a plain dynamic lease** — confirmed in the `FortiGate-OnAir` project's
+`fortigate_full_config_backup_2026-08-26.conf`: `config reserved-address`, `edit 37`, `set mac
+ac:44:f2:a3:44:33`, `set ip 192.168.128.9`, `set description "Yamaha-DM3"`. So it won't drift
+under normal operation — the `.24 → .9` change was a deliberate re-reservation at some point, not
+DHCP flakiness — but it **can** change again if that reservation entry is edited on the FortiGate,
+so if the console ever becomes unreachable at `.9`, that config is the first place to check before
+assuming a module/Companion problem.
 
 **The DM3 has two separate network interfaces.** The *Network* port ("For Mixer Control" in
 `SETUP → NETWORK`) carries RCP, StageMix, MonitorMix and OSC. The *Dante* port carries audio and
