@@ -256,6 +256,14 @@ module.exports = {
 			// but it basically pulls out the space-separated values, except for spaces that are inside quotes!
 			line = lines[i].match(/(?:[^\s"]+|"[^"]*")+/g)
 
+			// C0: 23 InputChLink rows in the shipped DM3 table are missing their leading "OK" token
+			// (space-indented to the same width instead) - confirmed unique to that one file, a data
+			// typo rather than anything the console itself ever sends. Restore the implicit token so
+			// these parse like every other row instead of being silently dropped by the guard below.
+			if (line !== null && line.length > 0 && ['prminfo', 'mtrinfo'].includes(line[0])) {
+				line.unshift('OK')
+			}
+
 			if (line !== null && line.length > 1 && ['OK', 'OKM', 'NOTIFY'].indexOf(line[0].toUpperCase()) !== -1) {
 				let rcpCommand = {}
 				let params = RCP_PARAM_DEF_FIELDS
