@@ -854,10 +854,11 @@ minimum before calling any phase done:
 1. ✅ Module loads; actions and feedbacks populate for `DM3`. Confirmed on the studio's real
    Companion 5.0.4 — 141 actions, 160 feedbacks, 351 presets, no warnings once the isVisible/Fade
    /preset-option-key/config-field-id bugs were fixed (see Phase 1 addendum).
-2. ⬜ `InCh/Fader/On` toggles CH1 and the feedback tracks it. Not explicitly run — testing so far
-   covered a meter feedback (CH7 `InCh/PreHPF`, confirmed working end-to-end including the
-   render fix) and a fader-level button showing as "on" with a sane variable value, not the
-   specific on/off-toggle-plus-feedback round trip.
+2. ✅ `InCh/Fader/On` toggles CH1 and the feedback tracks it. Confirmed 2026-08-27 against the
+   console at its new `.9` address: connection log shows a clean `set
+   MIXER:Current/InCh/Fader/On 0 0 1` → `OK set ... "ON"` round trip, the system log has nothing
+   from this connection at all (no warnings), and the button's own feedback/color was confirmed
+   flipping correctly by direct observation.
 3. ⬜ A fade from −∞ to 0 dB on CH1 is smooth and lands exactly. Not tested.
 4. ⬜ Recall scene A31 from the console surface; confirm Companion resyncs and **no trigger fires
    spuriously** (this is the C6/§7.2 regression test). Not tested.
@@ -872,8 +873,9 @@ minimum before calling any phase done:
    scope to fix.
 
 **Net: Phase 1's own exit bar ("loads and runs... existing pages behave identically") is not
-fully closed yet** — 1 of 6 items confirmed, 2 more expected to still fail by design (deferred to
-Phase 4/2). Finish 2–4 next time at the mixer before calling Phase 1 fully done.
+fully closed yet** — 2 of 6 items confirmed (2026-08-25 and 2026-08-27 sessions), 2 more expected
+to still fail by design (deferred to Phase 4/2). Fade and scene recall are the two genuinely open
+items left to actually run against the mixer.
 
 Use `tools/rcp-probe.js` to read ground truth from the console at any point — it's read-only and
 safe to run alongside Companion, since the DM3 accepts multiple simultaneous control connections.
