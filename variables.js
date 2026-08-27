@@ -148,6 +148,39 @@ module.exports = {
 		requestSceneNames(instance)
 	},
 
+	// Auto-populate a variable for every strip's name/level/on-state, for every fader-level channel
+	// on the console, without needing a feedback with "Auto-Create Variable" manually placed on a
+	// button first (Phase 5 P1, PLAN.md §9). Reuses createAction/createPresets' own
+	// isFaderLevel+RW('w') channel enumeration for consistency with what already gets fader-control
+	// UI. Builds instance._channelVariableAddresses, a plain address set index.js's addToDataStore
+	// consults on every value change so these variables keep updating live for free - the same
+	// mechanism a real Auto-Create Variable feedback uses (fbCreatesVar), just triggered without
+	// requiring any button to exist.
+	requestChannelVariables: (instance) => {
+		instance._channelVariableAddresses = new Set()
+		const faderCmds = instance.rcpCommands.filter((c) => paramFuncs.isFaderLevel(c) && c.RW.includes('w'))
+		for (const levelCmd of faderCmds) {
+			const nameCmd = instance.rcpCommands.find(
+				(cmd) => cmd.Address == levelCmd.Address.replace('/Fader/Level', '/Label/Name') && cmd.RW.includes('r'),
+			)
+			const onCmd = instance.rcpCommands.find(
+				(cmd) => cmd.Address == levelCmd.Address.replace('/Fader/Level', '/Fader/On') && cmd.RW.includes('r'),
+			)
+			const xCount = Math.max(parseInt(levelCmd.X) || 1, 1)
+			// Only ever request Y=0 here, even for a row whose table declares Y>1 (Fx says 2, e.g.) -
+			// confirmed live that Fx's Y=1 is InvalidArgument despite the table's own claim, so its
+			// real Y semantics aren't what X/Y addressing normally means elsewhere. Y=0 is always
+			// valid; anything a row might have beyond that is out of scope for this feature.
+			for (const cmd of [levelCmd, nameCmd, onCmd]) {
+				if (cmd === undefined) continue
+				instance._channelVariableAddresses.add(cmd.Address)
+				for (let x = 1; x <= xCount; x++) {
+					instance.addToCmdQueue({ Address: cmd.Address, X: x - 1, Y: 0, prefix: 'get' })
+				}
+			}
+		}
+	},
+
 	setVar: (instance, msg) => {
 		switch (msg.Action) {
 			case 'devinfo': {

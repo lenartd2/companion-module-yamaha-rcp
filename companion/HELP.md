@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.10.0
+## Yamaha Remote Control Protocol - v3.11.0
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -60,6 +60,14 @@ Note that this module only works to connected hardware. It does not work with th
 > remote head-amp is actually patched right now - it reads `0` (and gain/phantom reads and writes
 > get refused by the console) until one is. This is normal on a system with no Rio-class device on
 > the Dante network, not a fault - check `HAAvailability` before building a button around gain/48V.
+
+**AUTO-POPULATED CHANNEL VARIABLES**
+
+> **v3.11.0:** every fader-level channel (input channels, stereo inputs, FX returns, mixes,
+> matrices, ST, monitor) now gets a name/level/on-state variable automatically on connect - you no
+> longer need to place an "Auto-Create Variable" feedback on a button first just to get a channel's
+> name or level as a variable. These use the same naming as a manually auto-created variable (e.g.
+> `V_InCh_Fader_Level_1`), so anything already relying on that naming keeps working unchanged.
 
 **DYNAMIC CHANNEL PARAMETERS**
 

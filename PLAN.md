@@ -948,7 +948,7 @@ anything.
   without the user physically patching one in, exactly as this document anticipated when Phase 4 was
   planned.
 
-### Phase 5 — Broadcast feature layer
+### Phase 5 — Broadcast feature layer — **P1 done, P2/P3 deliberately paused**
 
 Chosen priorities, in build order:
 
@@ -969,6 +969,34 @@ existing `Tms STR` ↔ `Teams DL/DR` relationship in §2.2), scene-store confirm
 remote HA (Phase 4). **Fader ramps are already done** in v3.6.0.
 
 **Exit:** a show can be run from the Stream Deck without touching the console surface.
+
+**P1 closed 2026-08-28, shipped as v3.11.0**, built and tested while offsite (§7.6's dependency
+was satisfied back in Phase 3). Every fader-level channel (`isFaderLevel` + `RW` includes `w` — the
+same enumeration `createPresets()` already uses, for consistency) gets a name/level/on-state
+variable requested proactively on connect and kept live afterward by hooking `addToDataStore`: when
+a tracked address's value changes, it's routed through `fbCreatesVar` exactly as if a real feedback
+with "Auto-Create Variable" had fired — this is a deliberate reuse, not a parallel implementation,
+so it can't drift into a differently-named variable for a channel someone's already auto-created one
+for by hand. That reuse is also why the actual variable names ended up as `V_InCh_Fader_Level_1`
+etc. (the existing `getAutoVariableName` convention) rather than this section's own illustrative
+`inch_1_level_db` — a deliberate substitution in favour of not inventing a second naming scheme.
+Live-verified against the real console: real names (`Tisch`, `STREAM` — matching §2.2's own channel
+patch), real dB levels, real on-state, for InCh/Mix/St/Fx, with the ~90-variable definitions burst
+correctly coalesced into one `setVariableDefinitions()` call by §7.6. One narrow, documented gap:
+`Fx`'s parameter table declares a second value per channel (`Y=2`) that turned out to be
+`InvalidArgument` when actually queried live — confirmed via a direct probe, not assumed — so only
+`Fx`'s first value is covered; every other fader type is fully covered.
+
+**P2 (mic on-air + monitor dim) and P3 (studio presets built on it) were deliberately not
+attempted**, and shouldn't be attempted the same way P1 was (autonomous, offsite, no user at the
+console). Unlike everything else in Phases 1-5 P1, this item *writes* to `Monitor/Fader/Level` in
+response to a live mic-open/close event on a room this document itself flags as running voice
+lift — real feedback risk, not a hypothetical one. There is no way to mechanically verify "does the
+dim actually happen smoothly, at a sensible depth, without causing feedback or clipping the room's
+reinforcement" the way §7.2's cache-diffing or C6's address-matching could be verified against
+logged data — this genuinely needs a human listening in the room while it's tested, the same
+category of thing this session has consistently deferred (never triggering a real scene recall,
+never sending a real Dante-HA write). Pick this up with the user present.
 
 ### Phase 6 — Package, document, upstream
 

@@ -258,6 +258,7 @@ class instance extends InstanceBase {
 				clearInterval(this.meterTimer)
 				clearInterval(this.kaTimer)
 				varFuncs.getVars(this)
+				varFuncs.requestChannelVariables(this) // Phase 5 P1 - see PLAN.md §9
 				this.queueTimer = undefined
 				this.processCmdQueue()
 				if (this.config.metering) {
@@ -1365,6 +1366,14 @@ class instance extends InstanceBase {
 		if (this.dataStore[dsAddr][dsX][dsY] != cmd.Val) {
 			this.dataStore[dsAddr][dsX][dsY] = cmd.Val
 			this.scheduleFeedbackCheck(dsAddr.replace(/:/g, '_')) // Make sure variables are updated
+
+			// Phase 5 P1 (PLAN.md §9): keep every auto-populated channel variable
+			// (requestChannelVariables, variables.js) live without needing a feedback with
+			// "Auto-Create Variable" on some button - reuses fbCreatesVar's own naming/conversion via
+			// a synthetic feedback-shaped cmd, exactly as a real feedback callback would build one.
+			if (this._channelVariableAddresses?.has(dsAddr)) {
+				varFuncs.fbCreatesVar(this, { Address: dsAddr, X: dsX + 1, createVariable: true }, cmd.Val, {})
+			}
 		}
 	}
 

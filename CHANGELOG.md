@@ -3,6 +3,28 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.11.0] - 2026-08-28
+
+Phase 5 P1: auto-populated channel variables (PLAN.md §9). Everything else in Phase 5 (mic on-air +
+monitor dim, studio presets) needs live audio verification with the user present and was not
+attempted - see PLAN.md's Phase 5 writeup.
+
+### Added
+
+- **Every fader-level channel (input channels, stereo inputs, FX returns, mixes, matrices, ST,
+  monitor) now gets a name/level/on-state variable automatically as soon as the module connects** -
+  no need to place a feedback with "Auto-Create Variable" on some button first just to get a
+  channel's name or level available as a variable. Reuses the exact same naming and value-formatting
+  a manually auto-created variable already used (`getAutoVariableName`, added in v3.10.0 for the
+  metering fix), so this can't drift out of sync and doesn't create a second, differently-named
+  variable for a channel someone already has a manual one for.
+
+### Known limitations
+
+- One fader type, `Fx`, declares a second value per channel in its parameter table that turned out
+  to be invalid on this console when actually queried (`InvalidArgument`) - only its first value is
+  covered by this feature. Every other fader type is fully covered.
+
 ## [3.10.0] - 2026-08-28
 
 Phase 4: DM3 metering rebuild (fixes C6) and new Dante remote head-amp parameters (PLAN.md §4.5,
