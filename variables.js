@@ -287,14 +287,16 @@ module.exports = {
 			let varToAdd = { variableId: varName, name: 'Auto-Created Variable' }
 			let varIndex = instance.variables.findIndex((i) => i.variableId === varToAdd.variableId)
 
-			// Add new Auto-created variable and value
+			// Add new Auto-created variable and value. §7.6: a metering frame (or a scene recall) can
+			// discover many of these in one burst - each used to trigger its own full
+			// setVariableDefinitions() rebuild and its own setVariableValues() call (this is what
+			// upstream #64, "plugin restarts when a lot of data comes in", was hitting on a QL5 full
+			// of auto-created DCA level variables). Both are now coalesced into at most one call each
+			// per tick via the instance's queueNewVariable()/queueVariableValue().
 			if (varIndex == -1) {
-				instance.variables.push(varToAdd)
-				paramFuncs.setVariableDefinitions(instance)
+				instance.queueNewVariable(varToAdd)
 			}
-			let value = {}
-			value[varName] = data
-			instance.setVariableValues(value)
+			instance.queueVariableValue(varName, data)
 		} else {
 			const reg = /^@\(custom:([^)$]+)\)/
 			let hasCustomVar = reg.exec(cmd.Val)

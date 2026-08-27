@@ -807,12 +807,67 @@ effect of Phase 1 (the two implicit-globals it names were exactly what strict-mo
 turned into load-time `ReferenceError`s). C6 (DM3 metering rebuilt from the console's real flat
 enumeration) stays Phase 4 scope, untouched here.
 
-### Phase 3 — Performance
+### Phase 3 — Performance — **DONE**
 
 In cost order: §7.2 (shadow-store scene resync) → §7.4 (`findRcpCmd` map) → §7.5 (meter frame
 coalescing) → §7.3 (queue rework) → §7.6, §7.7.
 
 **Exit:** every §7.8 target met.
+
+**Closed 2026-08-27, shipped as v3.9.0.** Landed and tested while offsite (no Companion install
+available), so verification leaned harder on live-hardware scripting and pure-logic parity tests
+than Phase 1/2 did, and deliberately stopped short of one thing: no real scene recall was triggered
+against the console, since that changes the live studio's actual state and isn't something to do
+without the user present to confirm. Everything else was verified as directly as possible:
+
+- **§7.2** — `pollConsole()` no longer wipes `this.dataStore` before re-requesting. It re-queues a
+  `get` for every cached address that's still readable and not a meter (meters already refresh on
+  their own timer), and relies on `addToDataStore`'s existing per-address diff to only schedule a
+  feedback check when a fresh reply actually differs from the cached value. Live-verified: seeded
+  the real cache with 6 genuine DM3 values, corrupted one to simulate an unreported change, called
+  `pollConsole()`, and confirmed only that one address triggered a feedback check while the other 5
+  stayed silent - the exact anti-storm behaviour this section calls for, same network cost.
+- **§7.4** — `getParams()` now builds a `Map` keyed on the address's underscore form once, and
+  `findRcpCmd()` tries it before falling back to the original linear scan (still needed for the
+  `cmdAction === 'mtr'` path's address-rewriting, which on some models produces a genuine prefix
+  rather than an exact address). Verified byte-for-byte identical to the old scan: 888 lookups
+  compared across all 8 supported models' real parameter tables (exact-address and mtr-rewritten
+  forms), 0 differences.
+- **§7.5** — value changes (from `addToDataStore`) are now collected into a set and flushed as one
+  `checkFeedbacks(...ids)` call per tick instead of one call per changed address, which is what a
+  16-channel meter frame or a multi-address scene resync used to do. Live-verified as part of the
+  same §7.2 test above (the 6-address cache-seeding step visibly coalesced into single-digit
+  `checkFeedbacks` calls rather than one per address).
+- **§7.3** — the command queue no longer paces sends `MSG_DELAY` (5ms) apart on a timer regardless
+  of load; `addToCmdQueue` now schedules a drain for the next tick (letting a synchronous burst of
+  adds land together), and `processCmdQueue` drains everything it can into one batched
+  `socket.send()` call, deferring only a `set` that's still waiting on a live value it doesn't have
+  yet (unchanged retry contract). Live-verified: a batch of 6 queued reads, and separately the §7.2
+  resync's re-fetch, each went out as exactly one `sendCmd()` call. `sendCmd` itself now logs each
+  batched command on its own debug line so this doesn't regress log readability
+  ([[feedback_live_host_debugging]] - always paste verbatim logs - depends on that not changing).
+- **§7.6** — `fbCreatesVar`'s auto-created-variable path (the upstream #64 "plugin restarts when a
+  lot of data comes in" suspect - a burst of DCA/meter auto-created variables each used to trigger
+  its own full `setVariableDefinitions()` rebuild and its own `setVariableValues()` call) now goes
+  through two new instance methods, `queueNewVariable`/`queueVariableValue`, that coalesce a burst
+  into one rebuild and one values call per tick. Deliberately **not** applied to every
+  `setVariableValues` call site in the module - `variables.js`'s cued-channels tracking reads a
+  variable's current value back synchronously in the same call to update it, and deferring that
+  write would risk two same-tick updates reading stale data and clobbering each other. Verified with
+  a standalone unit test (two synchronous bursts of 5 variables each collapsed into exactly one
+  definitions call and one values call, with the correct final payload).
+- **§7.7** — replaced `JSON.parse(JSON.stringify(...))` with a shallow spread at the 3 hot-path
+  sites that are both frequently called and verifiably flat (a received message, a queued command,
+  a parsed action/feedback option set - all plain string/number/boolean-keyed objects with no nested
+  arrays or objects). The other deep-clone sites the original finding's line numbers pointed near
+  (preset construction, action-to-feedback conversion, upgrade scripts) clone genuinely nested
+  objects and don't run on a hot path - converting those would risk a shared-array mutation bug for
+  no measurable benefit, so they're left alone.
+
+**Not independently re-measured against §7.8's specific numeric targets** (latency in ms, CPU %) -
+doing that meaningfully needs a real Companion install driving a realistic button/feedback count
+under metering load, which needs the user at the console. The mechanism-level fixes above are the
+actual content of §7.2-§7.7; §7.8 is the user-facing confirmation that they add up, still open.
 
 ### Phase 4 — Metering rebuild and Dante HA
 

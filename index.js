@@ -52,6 +52,8 @@ class instance extends InstanceBase {
 	// Module deletion
 	async destroy() {
 		clearTimeout(this.queueTimer)
+		clearTimeout(this._feedbackCheckTimer)
+		clearTimeout(this._variableFlushTimer)
 		for (const fade of Object.values(this.fadeTimers || {})) {
 			clearTimeout(fade?.timer)
 		}
@@ -256,7 +258,7 @@ class instance extends InstanceBase {
 				clearInterval(this.meterTimer)
 				clearInterval(this.kaTimer)
 				varFuncs.getVars(this)
-				this.queueTimer = {}
+				this.queueTimer = undefined
 				this.processCmdQueue()
 				if (this.config.metering) {
 					this.startMeters()
@@ -290,7 +292,10 @@ class instance extends InstanceBase {
 					receivedCmds = paramFuncs.parseData(line) // Break out the parameters
 
 					for (let i = 0; i < receivedCmds.length; i++) {
-						let curCmd = JSON.parse(JSON.stringify(receivedCmds[i])) // deep clone
+						// §7.7: parseData()'s output is a flat string-keyed object (see its RCP_*_FIELDS
+						// lists) - a shallow copy is exactly equivalent to a deep clone here and much
+						// cheaper on a path that runs once per received line.
+						let curCmd = { ...receivedCmds[i] }
 						foundCmd = paramFuncs.findRcpCmd(this, curCmd.Address, curCmd.Action) // Find which command
 
 						switch (curCmd.Action) {
@@ -342,8 +347,10 @@ class instance extends InstanceBase {
 
 	// New Command (Action or Feedback) to Add
 	addToCmdQueue(cmd) {
-		clearTimeout(this.queueTimer)
-		let cmdToAdd = JSON.parse(JSON.stringify(cmd)) // Deep Clone
+		// §7.7: cmd is always a flat string/number-keyed object (an RCP address plus X/Y/Val/prefix) -
+		// a shallow copy is exactly equivalent to a deep clone here and much cheaper on a path that
+		// runs once per action fire and per feedback subscribe.
+		let cmdToAdd = { ...cmd }
 		let rcpCmd = paramFuncs.findRcpCmd(this, cmdToAdd.Address)
 		let i = this.cmdQueue.findIndex(
 			(c) =>
@@ -357,17 +364,21 @@ class instance extends InstanceBase {
 			this.cmdQueue.push(cmdToAdd)
 		}
 
-		if (this.queueTimer) {
+		// §7.3: schedule a drain on the next tick instead of pacing sends MSG_DELAY apart. Only the
+		// first add after an idle queue schedules anything - a burst of addToCmdQueue() calls within
+		// the same synchronous block (e.g. startMeters()'s forEach) all land in cmdQueue before the
+		// drain runs, so they go out as one batched TCP write instead of one write per command.
+		if (this.queueTimer === undefined) {
 			this.queueTimer = setTimeout(() => {
+				this.queueTimer = undefined
 				this.processCmdQueue()
-			}, MSG_DELAY)
+			}, 0)
 		}
 	}
 
-	// When a message comes in from the console, match it up and delete it, and send the next message
+	// When a message comes in from the console, match it up and remove it from the queue if
+	// present, then drain whatever's left in one batched write.
 	processCmdQueue(cmd) {
-		clearTimeout(this.queueTimer)
-		if (this.cmdQueue == undefined || this.cmdQueue.length == 0) return
 		if (cmd != undefined) {
 			let i = this.cmdQueue.findIndex(
 				(c) => c.prefix == 'get' && c.Address == cmd.Address && c.X == cmd.X && c.Y == cmd.Y,
@@ -377,36 +388,43 @@ class instance extends InstanceBase {
 			}
 		}
 
-		if (this.cmdQueue.length > 0) {
-			// Messages still to send?
-			let nextCmd = this.cmdQueue[0] // Oldest
+		if (this.cmdQueue == undefined || this.cmdQueue.length == 0) return
 
+		// §7.3: MSG_DELAY used to be a hard ceiling of ~200 msg/s regardless of what the console or
+		// socket could actually absorb, paced one send per timer tick. Drain the whole queue into one
+		// TCP write instead. A `set` that needs a live value it doesn't have yet (Toggle/relative
+		// actions - see parseVal) is deferred to the end instead of blocking everything queued behind
+		// it, same retry contract as before.
+		let toSend = []
+		let deferred = []
+		for (const nextCmd of this.cmdQueue) {
 			if (nextCmd.prefix == 'set') {
 				let nextCmdVal = paramFuncs.parseVal(this, nextCmd)
 				if (nextCmdVal == undefined) {
-					this.cmdQueue.shift()
-					this.cmdQueue.push(nextCmd)
-
-					this.queueTimer = setTimeout(() => {
-						this.processCmdQueue()
-					}, MSG_DELAY)
-
-					return
+					deferred.push(nextCmd)
+					continue
 				}
 				nextCmd.Val = nextCmdVal
+				this.addToDataStore(nextCmd) // Update to latest value
 			}
+			toSend.push(paramFuncs.fmtCmd(this, nextCmd))
+		}
 
-			let msg = paramFuncs.fmtCmd(this, nextCmd)
-			if (this.sendCmd(msg)) {
-				if (nextCmd.prefix == 'set') {
-					this.addToDataStore(nextCmd) // Update to latest value
-				}
-			}
+		this.cmdQueue = deferred
 
-			this.cmdQueue.shift() // Get rid of message, whether sent or not
+		if (toSend.length > 0) {
+			this.sendCmd(toSend.join('\n'))
+		}
+
+		if (this.cmdQueue.length > 0) {
+			// Everything left is a `set` still waiting on a live value - give the in-flight `get`(s) a
+			// moment to come back rather than busy-looping.
 			this.queueTimer = setTimeout(() => {
+				this.queueTimer = undefined
 				this.processCmdQueue()
 			}, MSG_DELAY)
+		} else {
+			this.queueTimer = undefined
 		}
 	}
 
@@ -1253,10 +1271,14 @@ class instance extends InstanceBase {
 	sendCmd(c) {
 		if (c !== undefined) {
 			c = c.trim()
-			this.log(
-				'debug',
-				`[${new Date().toJSON()}] Sending :    '${c}' to ${this.getVariableValue('modelName')} @ ${this.config.host}`,
-			)
+			// §7.3: a batched drain may pass several newline-joined commands to send in one TCP
+			// write - log each on its own line so the debug log still reads one command at a time.
+			for (const line of c.split('\n')) {
+				this.log(
+					'debug',
+					`[${new Date().toJSON()}] Sending :    '${line}' to ${this.getVariableValue('modelName')} @ ${this.config.host}`,
+				)
+			}
 
 			if (this.socket !== undefined && this.socket.isConnected) {
 				this.socket.send(`${c}\n`) // send the message to the device
@@ -1269,10 +1291,26 @@ class instance extends InstanceBase {
 
 	// Poll the console for it's status to update buttons via feedback
 	pollConsole() {
-		//varFuncs.getVars(this)
-		this.dataStore = {}
+		// §7.2: this used to wipe this.dataStore before re-requesting everything, which meant every
+		// reply looked like a *change* against an empty store, storming checkFeedbacks() for every
+		// address on the page even when a scene recall left most of them untouched (upstream #44).
+		// The re-poll is genuinely necessary - the console doesn't say what changed (§4.6) - but the
+		// wipe isn't. Re-request every address we already have a cached value for without deleting
+		// that value first: addToDataStore() below only fires checkFeedbacks() for an address once
+		// the fresh reply actually differs from what's cached, so unaffected buttons stay silent.
+		// Meter addresses are excluded - they're already re-requested continuously by meterTimer, so
+		// re-fetching them here would only add redundant traffic during the exact moment we're
+		// trying to avoid a storm.
+		for (const dsAddr of Object.keys(this.dataStore)) {
+			const rcpCmd = paramFuncs.findRcpCmd(this, dsAddr)
+			if (rcpCmd === undefined || rcpCmd.Type === 'mtr' || !rcpCmd.RW.includes('r')) continue
+			for (const dsX of Object.keys(this.dataStore[dsAddr])) {
+				for (const dsY of Object.keys(this.dataStore[dsAddr][dsX])) {
+					this.addToCmdQueue({ Address: dsAddr, X: Number(dsX), Y: Number(dsY), prefix: 'get' })
+				}
+			}
+		}
 		this.subscribeActions()
-		this.checkAllFeedbacks()
 	}
 
 	// Add a value to the dataStore
@@ -1289,8 +1327,66 @@ class instance extends InstanceBase {
 		}
 		if (this.dataStore[dsAddr][dsX][dsY] != cmd.Val) {
 			this.dataStore[dsAddr][dsX][dsY] = cmd.Val
-			this.checkFeedbacks(dsAddr.replace(/:/g, '_')) // Make sure variables are updated
+			this.scheduleFeedbackCheck(dsAddr.replace(/:/g, '_')) // Make sure variables are updated
 		}
+	}
+
+	// §7.5: a meter frame at the default 80ms interval can update a dozen-plus channel values in a
+	// single burst; calling checkFeedbacks() once per changed address (as addToDataStore used to)
+	// meant a full feedback sweep per channel per frame. Collect every address that actually changed
+	// during the current synchronous burst and fire one checkFeedbacks() call for all of them on the
+	// next tick instead - also helps pollConsole()'s residual post-recall trickle (§7.2) for the same
+	// reason.
+	scheduleFeedbackCheck(feedbackId) {
+		if (this._pendingFeedbackChecks === undefined) {
+			this._pendingFeedbackChecks = new Set()
+		}
+		this._pendingFeedbackChecks.add(feedbackId)
+		if (this._feedbackCheckTimer === undefined) {
+			this._feedbackCheckTimer = setTimeout(() => {
+				this._feedbackCheckTimer = undefined
+				const ids = [...this._pendingFeedbackChecks]
+				this._pendingFeedbackChecks.clear()
+				if (ids.length > 0) this.checkFeedbacks(...ids)
+			}, 0)
+		}
+	}
+
+	// §7.6: batches setVariableValues() calls and debounces setVariableDefinitions() rebuilds - see
+	// variables.js's fbCreatesVar, the auto-created-variable path upstream #64 ("plugin restarts when
+	// a lot of data comes in") was hitting. Not used for every setVariableValues() call in the module
+	// - a couple of call sites read a variable's current value back synchronously to update it (e.g.
+	// the cued-channels arrays in variables.js's setVar), and deferring those would risk two updates
+	// in the same tick reading stale data and clobbering each other.
+	queueVariableValue(name, value) {
+		if (this._pendingVariableValues === undefined) {
+			this._pendingVariableValues = {}
+		}
+		this._pendingVariableValues[name] = value
+		this._scheduleVariableFlush()
+	}
+
+	// Register a newly auto-created variable's definition, without triggering an immediate rebuild.
+	queueNewVariable(varToAdd) {
+		this.variables.push(varToAdd)
+		this._variableDefinitionsDirty = true
+		this._scheduleVariableFlush()
+	}
+
+	_scheduleVariableFlush() {
+		if (this._variableFlushTimer !== undefined) return
+		this._variableFlushTimer = setTimeout(() => {
+			this._variableFlushTimer = undefined
+			if (this._variableDefinitionsDirty) {
+				this._variableDefinitionsDirty = false
+				paramFuncs.setVariableDefinitions(this)
+			}
+			if (this._pendingVariableValues !== undefined && Object.keys(this._pendingVariableValues).length > 0) {
+				const values = this._pendingVariableValues
+				this._pendingVariableValues = {}
+				this.setVariableValues(values)
+			}
+		}, 0)
 	}
 
 	// Get a value from the dataStore. If the value doesn't exist, send a request to get it.

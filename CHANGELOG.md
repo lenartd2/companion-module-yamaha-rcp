@@ -3,6 +3,50 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.9.0] - 2026-08-27
+
+Phase 3: performance (PLAN.md §7, §9). No user-facing behaviour changes are intended - buttons and
+feedbacks should look and respond the same, just faster, especially right after a scene recall and
+under metering load.
+
+### Fixed
+
+- **Recalling a scene no longer causes a multi-second freeze on busy pages.** `pollConsole()` used
+  to wipe the entire local value cache and re-request everything; since the console doesn't report
+  what changed, every value that came back looked like a *change*, storming a feedback re-evaluation
+  for every address on the page even when the recall only touched a few of them (this was also the
+  cause of upstream #44, feedbacks re-firing on scene recall with no actual value change). The cache
+  is no longer wiped - everything is still re-requested fresh, but a feedback is only re-evaluated
+  for addresses whose new value actually differs from what was cached. Same network traffic, no
+  storm, no spurious re-fires. Verified live: seeded real cached values, corrupted one to simulate a
+  changed parameter, and confirmed the resync restored it while re-checking only that one feedback.
+- **The command queue no longer paces every send 5ms apart regardless of load.** A queued command
+  used to wait for a fixed timer tick even when the socket was completely idle and the console ready
+  for more - a hard ceiling of ~200 commands/second. The queue now drains everything it has into one
+  batched TCP write as soon as it's non-empty, verified live (a burst of queued reads went out as a
+  single write instead of one per command). A `set` waiting on a live value it doesn't have yet
+  (Toggle/relative actions) no longer blocks unrelated commands queued behind it.
+- **Looking up a parameter's definition is no longer a linear scan.** `findRcpCmd()` did a fresh
+  string allocation per candidate on every received message, every action, and every feedback check
+  - up to 177 allocations per lookup on DM3, far more on Rivage. Now backed by a lookup table built
+  once when the parameter file loads. Verified byte-for-byte identical to the old scan across all 8
+  supported models (888 lookups compared, 0 differences), including the meter-address rewriting path
+  that still needs the old scan as a fallback.
+- **A meter frame no longer re-evaluates feedbacks once per channel.** Metering updates (and any
+  other burst of near-simultaneous value changes) are now collected and applied to feedbacks in one
+  batch per tick instead of one re-evaluation per individual value change.
+- **A burst of newly auto-created variables no longer rebuilds the variable list once per
+  variable.** This is very likely what upstream #64 ("plugin restarts when a lot of data comes in")
+  was actually hitting - a channel strip full of auto-created DCA level variables appearing at once
+  each triggered its own full variable-definitions rebuild and its own value-update call. Both are
+  now batched to at most one of each per tick.
+- A few flat, non-nested objects on hot paths (a received message, a queued command, a parsed
+  action/feedback option set) were being deep-cloned with `JSON.parse(JSON.stringify(...))`;
+  replaced with an equivalent, much cheaper shallow copy. Left alone: a handful of other deep clones
+  elsewhere in the module clone genuinely nested objects (preset definitions, action-to-feedback
+  conversion, upgrade scripts) where a shallow copy would share arrays that get mutated independently
+  - none of those run on a hot path, so there was nothing to gain by touching them.
+
 ## [3.8.0] - 2026-08-27
 
 Phase 2: correctness and safety fixes (C0–C3, C5, C7, C8 from PLAN.md §8; C4 was already fixed as

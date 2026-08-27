@@ -209,6 +209,18 @@ module.exports = {
 					cmd.Type = 'bool'
 				}
 			})
+
+			// §7.4: findRcpCmd() was a linear scan doing a fresh .replace() per candidate on every
+			// receive/send - up to 177 allocations per lookup on DM3, far more on Rivage (1000+ rows).
+			// Build the O(1) exact-match index once here; first array occurrence wins on a duplicate
+			// key, matching what .find() would have returned.
+			instance.rcpCommandMap = new Map()
+			for (const cmd of rcpCmds) {
+				const key = cmd.Address.replace(/:/g, '_')
+				if (!instance.rcpCommandMap.has(key)) {
+					instance.rcpCommandMap.set(key, cmd)
+				}
+			}
 		}
 		return rcpCmds
 	},
@@ -403,7 +415,11 @@ module.exports = {
 	// fields) before this runs, so there is no longer any IPC round-trip here.
 	parseOptions: async (context, optionsToParse) => {
 		try {
-			let parsedOptions = JSON.parse(JSON.stringify(optionsToParse)) // Deep Clone
+			// §7.7: optionsToParse is a Companion action/feedback options object - every declared
+			// option field yields one scalar value (string/number/boolean), so a shallow copy is
+			// exactly equivalent to a deep clone here and much cheaper on a path that runs on every
+			// action fire and every feedback check.
+			let parsedOptions = { ...optionsToParse }
 
 			parsedOptions.X = optionsToParse.X == undefined ? 0 : parseInt(optionsToParse.X) - 1
 			parsedOptions.Y = optionsToParse.Y == undefined ? 0 : parseInt(optionsToParse.Y) - 1
@@ -611,7 +627,13 @@ module.exports = {
 				}
 			}
 			let cmdToFind = cmdName.replace(/:/g, '_')
-			rcpCmd = instance.rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
+			// §7.4: O(1) exact-address fast path, built once in getParams(). Falls back to the linear
+			// prefix scan for the 'mtr' rewrites above, which on some models truncate cmdName to a
+			// genuine (shorter, not exact) prefix of the stored Address rather than the full thing.
+			rcpCmd = instance.rcpCommandMap?.get(cmdToFind)
+			if (rcpCmd === undefined) {
+				rcpCmd = instance.rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
+			}
 		}
 		return rcpCmd
 	},
