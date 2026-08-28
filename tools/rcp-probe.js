@@ -23,9 +23,9 @@
 // slower and harder on the console.
 //
 // Example:
-//   node tools/rcp-probe.js 192.168.128.24
-//   node tools/rcp-probe.js 192.168.128.24 --enumerate --out=DM3-probe.txt
-//   node tools/rcp-probe.js 192.168.128.24 --raw='prminfo 0;get MIXER:Current/InCh/Fader/On 0 0'
+//   node tools/rcp-probe.js 192.168.128.9
+//   node tools/rcp-probe.js 192.168.128.9 --enumerate --out=DM3-probe.txt
+//   node tools/rcp-probe.js 192.168.128.9 --raw='prminfo 0;get MIXER:Current/InCh/Fader/On 0 0'
 
 const net = require('node:net')
 const fs = require('node:fs')

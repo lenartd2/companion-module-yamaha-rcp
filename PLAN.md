@@ -58,28 +58,29 @@ doesn't do enough**. Both turned out to be real, and both are diagnosable in the
 | Model | Yamaha **DM3** (the Dante-equipped model, not DM3 STANDARD) |
 | Firmware | **V3.00** |
 | Device name | `Y001-Yamaha-DM3-006b40` |
-| **RCP control** | **`192.168.128.9` : TCP 49280** — re-confirmed live 2026-08-28; `.24` is now dead |
-| Dante interface | `192.168.128.12` (advertises `_netaudio-arc._udp` as `BROOKLYN3-006b40.local`) — unconfirmed since the address change, worth re-checking |
+| **RCP control** | **`192.168.128.9` : TCP 49280** — permanent DHCP reservation as of 2026-08-28 |
+| Dante interface | `192.168.128.12` (advertises `_netaudio-arc._udp` as `BROOKLYN3-006b40.local`) — re-confirmed 2026-08-28 |
 | Run mode | `normal` |
 
-**The RCP control address changed from `192.168.128.24` (original research) to `192.168.128.9`**,
-noticed 2026-08-25 and re-confirmed live (`devinfo devicename` still answers
-`Y001-Yamaha-DM3-006b40`, same physical console, firmware unchanged). This is **DHCP with a MAC
-reservation, not a plain dynamic lease** — confirmed in the `FortiGate-OnAir` project's
-`fortigate_full_config_backup_2026-08-26.conf`: `config reserved-address`, `edit 37`, `set mac
-ac:44:f2:a3:44:33`, `set ip 192.168.128.9`, `set description "Yamaha-DM3"`. So it won't drift
-under normal operation — the `.24 → .9` change was a deliberate re-reservation at some point, not
-DHCP flakiness — but it **can** change again if that reservation entry is edited on the FortiGate,
-so if the console ever becomes unreachable at `.9`, that config is the first place to check before
-assuming a module/Companion problem.
+**`192.168.128.9` is now a permanent DHCP reservation**, set by the operator on 2026-08-28 and
+confirmed live the same day (`devinfo devicename` → `Y001-Yamaha-DM3-006b40`, firmware unchanged).
+Treat it as the console's fixed address: it is safe to put in Companion's connection config, in
+scripts, and in documentation.
 
-**Do not hardcode the address in your head.** Mid-session on 2026-08-28 the development Mac's own
-lease moved from `.9` to `.27` while the console took `.9`, and probes to the previously-working
-`.24` started returning `ECONNREFUSED`. The failure looks exactly like a dead console. Re-discover
-before debugging anything else:
+The reservation lives on the studio FortiGate (see the `FortiGate-OnAir` project — `config
+reserved-address`, MAC `ac:44:f2:a3:44:33`, description `"Yamaha-DM3"`). That is the one place it
+could change, so if the console ever becomes unreachable at `.9`, check the reservation before
+assuming a module or Companion fault.
+
+*History, for anyone reading older notes or commits:* the console was at `192.168.128.24` during
+the original research and moved to `.9` before the reservation was made permanent. Pre-2026-08-28
+material referencing `.24` is stale, not wrong-at-the-time.
+
+**If it ever does go missing**, re-discover rather than debug — and note the two interfaces are
+different addresses:
 
 ```bash
-nmap -p 49280 --open 192.168.128.0/24     # the Network (control) interface
+nmap -p 49280 --open 192.168.128.0/24     # the Network (control) interface — RCP lives here
 dns-sd -B _netaudio-arc._udp local        # the Dante interface — a DIFFERENT address
 ```
 
