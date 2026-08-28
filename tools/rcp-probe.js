@@ -15,6 +15,12 @@
 //                 Without it, the script only identifies the console.
 //   --raw="a;b"   send these semicolon-separated commands verbatim after identification.
 //                 Refuses anything that would write to the console.
+//   --pace=ms     gap between chunks of 16 commands (default 40). Raise if the
+//                 console starts dropping replies on a large sweep.
+//
+// NOTE: put many commands into ONE invocation rather than looping this script —
+// commands are paced internally, and a fresh TCP connection per command is both
+// slower and harder on the console.
 //
 // Example:
 //   node tools/rcp-probe.js 192.168.128.24
@@ -103,15 +109,34 @@ for (const spec of [].concat(flags.sweep ?? [])) {
 	}
 }
 
+// Send in paced chunks over ONE connection. A 112-command burst on a single
+// socket was observed to produce no replies at all, so keep the chunks small and
+// spaced rather than dumping everything into the socket at once.
+const PACE_MS = Number(flags.pace) || 40
+const CHUNK = 16
+
 const socket = net.createConnection({ host, port: RCP_PORT }, () => {
 	console.error(`connected to ${host}:${RCP_PORT}`)
 	const cmds = [...IDENT_CMDS, ...(flags.enumerate ? ENUMERATE_CMDS : []), ...rawCmds, ...sweepCmds]
-	for (const cmd of cmds) {
-		if (sweepCmds.length === 0) console.error(`  -> ${cmd}`)
-		socket.write(`${cmd}\n`)
+	const verbose = cmds.length <= 24
+
+	let sent = 0
+	const sendChunk = () => {
+		if (socket.destroyed) return
+		const chunk = cmds.slice(sent, sent + CHUNK)
+		for (const cmd of chunk) {
+			if (verbose) console.error(`  -> ${cmd}`)
+			socket.write(`${cmd}\n`)
+		}
+		sent += chunk.length
+		armQuietTimer()
+		if (sent < cmds.length) {
+			setTimeout(sendChunk, PACE_MS)
+		} else if (!verbose) {
+			console.error(`  -> ${cmds.length} commands sent`)
+		}
 	}
-	if (sweepCmds.length > 0) console.error(`  -> ${cmds.length} commands (incl. ${sweepCmds.length} swept)`)
-	armQuietTimer()
+	sendChunk()
 })
 
 let buffer = ''
@@ -135,6 +160,17 @@ socket.on('data', (chunk) => {
 
 socket.on('error', (err) => {
 	console.error(`error: ${err.message}`)
+	if (err.code === 'ECONNREFUSED') {
+		console.error(
+			'\nNothing is listening on 49280 at that address. Most likely the console has a\n' +
+				'different IP than you think — its address is a DHCP reservation and the pool has\n' +
+				'been observed to shuffle. Re-discover it before assuming a console fault:\n' +
+				'  dns-sd -B _netaudio-arc._udp local     # finds the Dante interface, NOT this one\n' +
+				'  nmap -p 49280 --open 192.168.128.0/24  # finds the Network (control) interface\n' +
+				'Also check you are not pointed at the Dante interface: RCP lives only on the\n' +
+				'Network port ("For Mixer Control"), which is a separate address.'
+		)
+	}
 	process.exit(1)
 })
 

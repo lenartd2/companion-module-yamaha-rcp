@@ -9,7 +9,8 @@ an assumption, it says so.
 ## Contents
 
 1. [Orientation](#1-orientation) — what this project is, in one page
-2. [The system as it exists](#2-the-system-as-it-exists) — console, patch, scenes, network
+2. [The system as it exists](#2-the-system-as-it-exists) — console, network, **signal flow and the
+   rules it imposes**, scenes
 3. [How we know what we know](#3-how-we-know-what-we-know) — research method, reproducible
 4. [The RCP protocol, as observed](#4-the-rcp-protocol-as-observed) — wire reference
 5. [What the DM3 exposes — and what it doesn't](#5-what-the-dm3-exposes--and-what-it-doesnt)
@@ -57,7 +58,7 @@ doesn't do enough**. Both turned out to be real, and both are diagnosable in the
 | Model | Yamaha **DM3** (the Dante-equipped model, not DM3 STANDARD) |
 | Firmware | **V3.00** |
 | Device name | `Y001-Yamaha-DM3-006b40` |
-| **RCP control** | **`192.168.128.9` : TCP 49280** — see note below |
+| **RCP control** | **`192.168.128.9` : TCP 49280** — re-confirmed live 2026-08-28; `.24` is now dead |
 | Dante interface | `192.168.128.12` (advertises `_netaudio-arc._udp` as `BROOKLYN3-006b40.local`) — unconfirmed since the address change, worth re-checking |
 | Run mode | `normal` |
 
@@ -72,6 +73,16 @@ DHCP flakiness — but it **can** change again if that reservation entry is edit
 so if the console ever becomes unreachable at `.9`, that config is the first place to check before
 assuming a module/Companion problem.
 
+**Do not hardcode the address in your head.** Mid-session on 2026-08-28 the development Mac's own
+lease moved from `.9` to `.27` while the console took `.9`, and probes to the previously-working
+`.24` started returning `ECONNREFUSED`. The failure looks exactly like a dead console. Re-discover
+before debugging anything else:
+
+```bash
+nmap -p 49280 --open 192.168.128.0/24     # the Network (control) interface
+dns-sd -B _netaudio-arc._udp local        # the Dante interface — a DIFFERENT address
+```
+
 **The DM3 has two separate network interfaces.** The *Network* port ("For Mixer Control" in
 `SETUP → NETWORK`) carries RCP, StageMix, MonitorMix and OSC. The *Dante* port carries audio and
 Dante control. They are different IP addresses even when they sit on the same subnet, as they do
@@ -84,47 +95,167 @@ amplifier, `Regie-30-0f`, `ABX-6-2b7364`.
 Companion itself is **not** installed on the development Mac — it runs elsewhere in the studio.
 Plan for a copy-to-target step when installing dev builds ([§10](#10-build-install-test)).
 
-### 2.2 The studio patch
+### 2.2 Signal flow — the authoritative routing
 
-Read live from the console. This matters because the on-air logic in Phase 5 needs to know which
-channels are microphones.
+**This is the operator's own documentation of the studio, reproduced as given.** It is the source
+of truth for *intent*. §2.3 records what the console actually reports, which is not identical.
 
-| Ch | Label | Notes |
+#### Input channels
+
+| Ch | Source | Mix routing | Stream / Main L-R | Notes |
+|---|---|---|---|---|
+| **1** | Ceiling Mic1 – Stage | Mix 1 | **Yes** | Stage ceiling microphone. Sent to Teams and stream. |
+| **2** | Ceiling Mic2 – Couch | Mix 1 | **Yes** | Couch ceiling microphone. Sent to Teams and stream. |
+| **3** | Ceiling Mic1 – Stage Local | Mix 3, 5, 6 | No | Local reinforcement / lift only. |
+| **4** | Ceiling Mic2 / Couch Local | Mix 4 | No | Sent only to Lift All. |
+| **5** | Handheld Mic 1 | Mix 1, 5, 6 | **Yes** | Teams, stage speakers and stream. |
+| **6** | Handheld Mic 2 | Mix 1, 3, 5, 6 | **Yes** | Teams, centre-stage lift, stage speakers and stream. |
+| **7** | Media PC – Left | all Mix outputs | No | Stream receives Media PC audio separately via NDI. |
+| **8** | Media PC – Right | all Mix outputs | No | Stream receives Media PC audio separately via NDI. |
+| **9** | *Reserved:* USB-C audio via Dante | Mix 2, 5, 6 | No | Reserved, currently unused. |
+| **10** | Teams Remote Speaker – Left | Mix 4, 5, 6 | **Yes** | Incoming audio from remote Teams participant. |
+| **11** | Teams Remote Speaker – Right | Mix 4, 5, 6 | **Yes** | Incoming audio from remote Teams participant. |
+| **12+** | Unused | — | — | Not assigned. |
+
+#### Mix outputs
+
+| Mix | Function | Description |
 |---|---|---|
-| 1 | `Tisch` | table mic |
-| 2 | `Couch` | couch mic |
-| 3 | `TischV` | table, second position |
-| 4 | `CouchV` | couch, second position |
-| 5 | `Hand1` | handheld |
-| 6 | `Hand2` | handheld |
-| 7–8 | `Med PC L` / `Med PC R` | media PC, stereo pair |
-| 9 | `usbC` | USB-C input |
-| 10–11 | `Teams DL` / `Teams DR` | **Teams return over Dante**, stereo pair |
-| 12–14 | `ch12`–`ch14` | unused, factory defaults |
-| 15–16 | `Tasche1` / `Tasch2` | beltpack ("pocket") radio mics |
+| **Mix 1** | **Teams Send** | Audio to remote Teams participants — what the far end hears. |
+| **Mix 2** | **Subwoofer** | Subwoofer feed. |
+| **Mix 3** | **Centre Stage Lift** | Selected centre-stage mics to two speakers further from the stage. Limited reinforcement, deliberately not covering the whole audience / back-office area. |
+| **Mix 4** | **Lift All** | All lifted / reinforced areas, including the stage. |
+| **Mix 5** | **Stage Speaker Left** | Left stage loudspeaker. |
+| **Mix 6** | **Stage Speaker Right** | Right stage loudspeaker. |
 
-All 16 inputs are `Role = Mono`.
+#### Matrix, main and monitoring
 
-| Bus | Label | Type |
-|---|---|---|
-| Mix 1 | `Tms STR` | VARI — **Teams send** |
-| Mix 2 | `Sub` | VARI |
-| Mix 3 | `LIFTcntr` | VARI — voice lift, centre |
-| Mix 4 | `LIFTall` | VARI — voice lift, all |
-| Mix 5–6 | `Stage L` / `Stage R` | VARI |
-| Mtrx 1–2 | `Rec L` / `Rec R` | recording feed |
-| ST IN 1–2 | `Playback` | |
-| Mute groups 1–6 | `MUTE 1`–`MUTE 6` | factory default names |
+| Output | Function |
+|---|---|
+| **MTRX 1 / 2** | USB recording |
+| **Main L / R** | `STREAM` — stream audio output |
+| **Monitoring** | **None configured.** No dedicated monitor bus exists. |
 
-**Two things follow directly from this patch:**
+#### Signal-flow rules that constrain anything we build
 
-- **Mix 1 `Tms STR` + CH10/11 `Teams DL/DR` is already a mix-minus.** The Teams return must not be
-  sent back to Teams. Whoever touches send routing needs to know that relationship exists.
-- **`LIFTcntr` / `LIFTall` means voice lift** — open mics feeding room speakers. Acoustic feedback
-  is a live risk in this room, which is exactly why the "dim monitors when a mic opens" work in
-  Phase 5 is worth doing and worth doing carefully.
+These are the constraints a Companion layer must not violate. Each one is a way to break a live
+show silently.
 
-### 2.3 Scenes
+1. **Mix 1 is a mix-minus. CH10/11 must never feed it.** The Teams return going back into the
+   Teams send is an echo for every remote participant. Any bulk "enable sends" helper must exclude
+   that pair explicitly — this is the single most dangerous automation mistake available here.
+2. **CH7/8 (Media PC) must stay off Main L/R.** The stream already receives Media PC audio via
+   **NDI**; routing it to the stream bus too would double the source. Any "send everything to
+   stream" helper must skip 7 and 8.
+3. **Mics are split across channel pairs.** CH1 and CH3 are the *same physical ceiling microphone*
+   — CH1 carries it to Teams and the stream, CH3 carries it to local reinforcement. CH2 and CH4 are
+   the same pair for the couch mic. The console labels corroborate this: `Tisch` / `TischV` and
+   `Couch` / `CouchV`, where `V` is *Verstärkung* (reinforcement).
+   **Consequence: "mute the stage mic" means muting CH1 *and* CH3 together.** A per-channel on-air
+   button would leave one half of each mic live. Phase 5 needs a **logical mic** abstraction:
+
+   | Logical mic | Channels | Reaches |
+   |---|---|---|
+   | Ceiling Stage | 1 + 3 | Teams, stream, centre lift, stage speakers |
+   | Ceiling Couch | 2 + 4 | Teams, stream, lift-all |
+   | Handheld 1 | 5 | Teams, stream, stage speakers |
+   | Handheld 2 | 6 | Teams, stream, centre lift, stage speakers |
+
+   *This pairing is inferred from labels and routing and should be confirmed against the physical
+   patch before it is built on.*
+4. **There is no monitor bus, so there is nothing to "dim."** See §2.4 — this changes the Phase 5
+   design substantially.
+
+### 2.3 What the console actually reports
+
+Read live via `tools/rcp-probe.js` (`InCh/ToMix/On`, `InCh/ToSt/On`, `InCh/Fader/On`). `Y` = send
+on. This is *state*, not level — several of these sends are on but sitting at −∞.
+
+```
+CH   M1 M2 M3 M4 M5 M6   ST  ON      (M1=Teams M2=Sub M3=LIFTcntr M4=LIFTall M5/6=Stage L/R)
+ 1    Y  .  .  .  .  .    Y   off
+ 2    Y  .  .  .  .  .    Y   off
+ 3    .  .  Y  .  Y  Y    .   off
+ 4    .  .  .  Y  .  .    .   off
+ 5    Y  .  .  .  Y  Y    Y   off
+ 6    Y  .  .  .  Y  Y    Y   off     <-- M3 OFF, doc says on
+ 7    Y  Y  Y  Y  Y  Y    .   ON
+ 8    Y  Y  Y  Y  Y  Y    .   ON
+ 9    .  Y  .  .  Y  Y    Y   off     <-- ST ON, doc says no
+10    .  .  .  Y  Y  Y    Y   off
+11    .  .  .  Y  Y  Y    Y   off
+12    Y  Y  Y  Y  Y  Y    Y   off  ┐
+13    Y  Y  Y  Y  Y  Y    Y   off  │  factory defaults, unassigned
+14    Y  Y  .  .  .  .    Y   off  │
+15    Y  Y  .  .  .  .    Y   off  │  labelled `Tasche1` / `Tasch2` on the console
+16    Y  Y  .  .  .  .    Y   off  ┘
+```
+
+**Channels 1–11 match the documented intent except in two places:**
+
+- **CH6 → Mix 3 is OFF.** The documentation says Handheld Mic 2 should feed Centre Stage Lift. It
+  currently does not, so Handheld 2 gets no centre-stage reinforcement.
+- **CH9 → Stream is ON.** The documentation says the reserved USB-C input should not reach the
+  stream. Its fader is off so nothing is audible today, but the path is armed: turning that channel
+  on would put a reserved input straight into the stream.
+
+Neither is dangerous right now — every input except the Media PC pair is switched off. Both are
+worth a decision before automation starts flipping channels on, because automation will make the
+armed path reachable.
+
+**Two further observations from the live read:**
+
+- **CH15/16 are labelled `Tasche1` / `Tasch2` (beltpacks) but carry factory-default routing** —
+  Mix 1 + Mix 2 + Stream. The operator's table lists 12+ as unused. If those beltpacks are ever
+  patched, they go to Teams and the stream immediately, with no deliberate routing decision.
+- **Every source into MTRX 1/2 is switched On but sits at −∞.** All six mixes and the main bus have
+  their matrix sends enabled with the level fully down, so **the USB recording bus currently
+  receives nothing**. Either recording is fed some other way (a direct out or Dante patch rather
+  than the matrix), or it would record silence. Worth confirming — the plan assumes nothing about
+  it either way.
+
+Main bus (`St`) is labelled `STREAM`, fader on at **+2.70 dB**. Stereo inputs 1–2 (`Playback`)
+route to Mix 1–4 and the stream, both faded off.
+
+### 2.4 The absence of a monitor bus changes Phase 5
+
+An earlier draft of this plan proposed *"auto-dim the control-room monitors when a mic opens,"*
+built on `Monitor/Fader/Level` and `Monitor/On`. **There is no monitoring configured on this
+console**, so there is nothing for that to act on.
+
+The Monitor parameters do exist and answer over RCP — they are simply unused here. Read live:
+
+```
+Monitor/Fader/Level      -32768      (-inf)
+Monitor/On                    0      (off)
+Monitor/St/SourceCh/St        1      (source = the STREAM bus)
+Cue/ActiveCue            "NONE"
+```
+
+So the bus is addressable but parked: switched off, fader at −∞, nothing cued. **Anything that
+dims it changes nothing anyone can hear.** This is the evidence behind the Phase 5 correction in
+§9 — the shipped Monitor Auto-Dim feature is not wrong as code, but its premise does not hold in
+this room.
+
+What actually exists, and what actually risks feedback, are the **reinforcement buses**: Mix 3
+(`LIFTcntr`), Mix 4 (`LIFTall`), and Mix 5/6 (stage speakers). Those carry open microphones into
+loudspeakers in the same room. That is the real acoustic loop.
+
+This makes the feature **more delicate, not less**. Dimming a control-room monitor is invisible to
+the audience; pulling a lift or stage-speaker send is immediately audible to everyone present and
+degrades the reinforcement the room depends on. So the Phase 5 design has to change:
+
+- **Do not** silently duck reinforcement buses as a background safety behaviour.
+- **Do** provide explicit, operator-driven states — for example a "mic live" button that opens the
+  logical mic's channels together (§2.2 rule 3) with the correct sends, and a clearly labelled
+  "kill lift" action for feedback emergencies.
+- **Do** surface tally and metering so the operator can see a building loop before they hear it.
+- Any automatic behaviour must be opt-in per button and must show its state, never act invisibly.
+
+Confirm the intended behaviour with the operator before building anything that changes a
+reinforcement send on its own.
+
+### 2.5 Scenes
 
 Scene bank A is in use; **bank B is empty** (`sscurrent_ex scene_b` → `InvalidArgument`).
 
@@ -193,6 +324,11 @@ verb: **`WrongFormat` means keep trying, `UnknownCommand` means give up.**
 `tools/probes/DM3-V3.00-live.txt` — the full live dump (177 `prminfo` rows + 17 `mtrinfo` rows +
 device identification), committed. This is the reference the shipped tables are diffed against.
 Regenerate it after any console firmware update.
+
+`tools/probes/DM3-routing-2026-08-28.txt` — the live send matrix (`InCh/ToMix/On`, `InCh/ToSt/On`,
+`InCh/Fader/On` for all 16 inputs, plus stereo inputs, matrix sources and the Monitor bus). This is
+what §2.3 and §2.4 are built on. Regenerate it whenever the patch changes — the discrepancies it
+surfaced are the kind that appear silently.
 
 ### 3.4 What we have not probed
 
@@ -973,6 +1109,39 @@ remote HA (Phase 4). **Fader ramps are already done** in v3.6.0.
 
 **Exit:** a show can be run from the Stream Deck without touching the console surface.
 
+---
+
+> ### ⚠️ Correction — 2026-08-28: the P2 premise does not hold in this room
+>
+> The operator's routing documentation (§2.2) states plainly: **"No dedicated monitoring bus or
+> monitoring configuration is currently set up."** A live read (§2.4) confirms it — `Monitor/On` is
+> `0`, `Monitor/Fader/Level` is `-32768`, nothing is cued.
+>
+> **The shipped Monitor Auto-Dim would therefore dim a bus that is already off at −∞ and restore it
+> to −∞. It would do nothing audible in this studio.** The code is not wrong — it is a reasonable
+> generic feature and other rooms do have monitors — but it does not address this room's problem,
+> and the plan previously claimed it did. That claim was mine and it was wrong: it was inferred
+> from the parameter table's existence rather than from how the console is actually configured.
+>
+> **What the real risk is.** The buses that carry open microphones into loudspeakers here are
+> **Mix 3 (`LIFTcntr`), Mix 4 (`LIFTall`), and Mix 5/6 (stage speakers)** — the voice-lift and
+> stage reinforcement paths. That is the acoustic loop worth engineering against.
+>
+> **What changes:**
+>
+> - Leave `enableMicMonitorDim` **off** and unverified. Do not spend a live session validating it;
+>   there is nothing to hear. Keep the code — it costs nothing and may suit another install.
+> - `micExclusiveMode` is **unaffected by this correction** — it acts on input channel On states,
+>   not on the monitor bus, and remains worth verifying live.
+> - **Redesign the dim behaviour around reinforcement buses before building anything further**, and
+>   read §2.4's warning first: pulling a lift send is *audible to the room*, unlike dimming a
+>   control-room monitor. It must be operator-driven and visible, not a silent background safety
+>   behaviour.
+> - The `micChannels` default (`1,2,3,4,5,6,15,16`) needs revisiting against §2.2 rule 3: CH1/CH3
+>   and CH2/CH4 are **the same physical microphones** split across channel pairs, and CH15/16 are
+>   currently unpatched beltpacks carrying factory-default routing. Exclusive-mic mode over that
+>   list would treat one physical mic as two independent sources.
+
 **P1 closed 2026-08-28, shipped as v3.11.0**, built and tested while offsite (§7.6's dependency
 was satisfied back in Phase 3). Every fader-level channel (`isFaderLevel` + `RW` includes `w` — the
 same enumeration `createPresets()` already uses, for consistency) gets a name/level/on-state
@@ -1171,14 +1340,28 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
 
 ## 12. Open questions and assumptions
 
-**Open:**
+**Open — for the operator:**
 
-1. **What is actually driven from Companion today?** Phase 5's ordering should follow the real show,
-   not inference from channel labels. The patch in §2.2 is our best current read.
-2. **Where does Companion run, and how are dev modules loaded there?** Needed before Phase 1 can be
-   verified end to end (§10.3).
-3. **Is `Tms STR` maintained by hand today?** If the Teams mix-minus is currently a manual routing
-   chore, the deferred mix-minus helper may deserve promotion.
+1. **CH6 → Mix 3 is off, but the routing doc says it should be on.** Handheld Mic 2 currently gets
+   no centre-stage lift. Intended, or drift? (§2.3)
+2. **CH9 → Stream is on, but the routing doc says no.** The reserved USB-C input is armed to reach
+   the stream; only its fader being down keeps it silent. Should that send be turned off before
+   automation starts flipping channels on? (§2.3)
+3. **Every matrix send is On at −∞, so MTRX 1/2 receives nothing.** Is USB recording fed some other
+   way — a direct out or Dante patch — or is the recording bus simply not commissioned? (§2.3)
+4. **Are CH1/CH3 and CH2/CH4 the same physical microphones?** Labels (`Tisch`/`TischV`) and routing
+   both say yes. Phase 5's logical-mic grouping depends on it. (§2.2 rule 3)
+5. **CH15/16 are labelled as beltpacks but carry factory-default routing** to Teams, Sub and the
+   stream. Are they patched? If they get used, they reach air with no deliberate routing decision.
+6. **Is any monitoring planned?** If not, the Monitor Auto-Dim feature stays permanently dormant and
+   the reinforcement-bus redesign in §9 becomes the only path. (§2.4)
+7. **Is `Tms STR` maintained by hand today?** If the Teams mix-minus is a manual routing chore, the
+   deferred mix-minus helper deserves promotion.
+
+**Open — engineering:**
+
+8. **Where does Companion run, and how are dev modules loaded there?** Needed to verify end to end
+   (§10.3).
 
 **Assumptions a successor should challenge:**
 
@@ -1191,3 +1374,6 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
   console; all write semantics are read off the table (§3.4).
 - That the console's behaviour under sustained `NOTIFY` load matches the single-shot reads we did.
   Not tested (§3.4).
+- **That a parameter existing in the table means it does something in this room.** The Monitor bus
+  taught us otherwise (§2.4): fully addressable over RCP, and completely unused. Before building on
+  any parameter, read its *current value* and ask whether the studio actually uses that path.
