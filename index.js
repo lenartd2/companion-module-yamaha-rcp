@@ -279,10 +279,22 @@ class instance extends InstanceBase {
 				}
 
 				if (receiveBuffer.endsWith('\x0A')) {
-					receiveBuffer = receivedLines[receivedLines.length - 1] // Broken line, leave it for next time...
-					receivedLines.splice(receivedLines.length - 1) // Remove it.
-				} else {
+					// Chunk ended exactly on a line boundary - the last split element is always the
+					// empty string after the final delimiter, nothing left pending.
 					receiveBuffer = ''
+				} else {
+					// These two branches were swapped - a chunk that does NOT end on a line boundary
+					// means the last split element is a genuinely incomplete line (the rest is still
+					// in flight), not the previous branch's always-empty trailing element. The old
+					// code cleared the buffer here and let the for-loop below process that incomplete
+					// fragment as if it were a complete line - normally invisible (most chunks happen
+					// to land on a line boundary), but a heavy stream of rapid lines (e.g. many
+					// concurrent meter subscriptions) makes a mid-line chunk split - and the resulting
+					// garbled/truncated line - far more likely. Found via a crash in setVar's default
+					// case (msg.Address undefined) that only reproduced once, under exactly that kind
+					// of load, and never on a quiet connection.
+					receiveBuffer = receivedLines[receivedLines.length - 1] // Broken line, leave it for next time...
+					receivedLines.splice(receivedLines.length - 1) // Remove it - don't process it yet.
 				}
 
 				for (let line of receivedLines) {

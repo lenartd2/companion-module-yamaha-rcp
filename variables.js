@@ -247,6 +247,10 @@ module.exports = {
 				break
 			}
 			default: {
+				// A malformed/truncated line (e.g. one split mid-line across two TCP chunks - see the
+				// receive handler in index.js) could reach here with no Address at all. Every case
+				// below expects one; bail rather than crash the connection over a single bad line.
+				if (msg.Address === undefined) return
 				let cmdName = msg.Address.slice(msg.Address.indexOf('/') + 1) // String after "MIXER:Current/"
 				let varName
 

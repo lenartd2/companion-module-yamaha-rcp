@@ -630,9 +630,11 @@ of §7.2–§7.7 — some may already be under target once the IPC storm is gone
 
 ## 8. Findings: correctness
 
-**C0–C3, C5, C7, C8 fixed 2026-08-27 (Phase 2); C4 fixed as a side effect of Phase 1; C6 stays
-open, deliberately, for Phase 4.** Table left as originally written (the bugs, as found) — see the
-Phase 2 write-up in §9 for what changed and how each was verified.
+**C0–C3, C5, C7, C8 fixed 2026-08-27 (Phase 2); C4 fixed as a side effect of Phase 1; C6 fixed
+2026-08-28 (Phase 4); C9 wasn't part of the original research — found and fixed 2026-08-28 while
+investigating a crash during Phase 4's own live testing.** Table left as originally written (the
+bugs, as found) — see the Phase 2/Phase 4 write-ups in §9 for what changed and how each was
+verified.
 
 | # | Issue | Location / evidence |
 |---|---|---|
@@ -645,6 +647,7 @@ Phase 2 write-up in §9 for what changed and how each was verified.
 | **C6** | **DM3 metering is broken, and the cause is now known.** The console enumerates 17 flat per-pickoff meter addresses; the module ships 6 synthesised rows with a `Pickoff` column and reconstructs addresses by appending the pickoff — transposing the X/Y axes against reality (§4.5). That produces exactly the reported symptoms: `Meter/St` returns left only, `Meter/StInCh` returns nothing, `Meter/FxRtnCh` always returns channel 1. **Fix: drive metering from the console's own enumeration.** | upstream [#45](https://github.com/bitfocus/companion-module-yamaha-rcp/issues/45); live `mtrinfo` sweep vs shipped table |
 | **C7** | **No reconnect/backoff of its own**, and connection errors flood the Companion log. | upstream [#57](https://github.com/bitfocus/companion-module-yamaha-rcp/issues/57) |
 | **C8** | **Scene Store has no confirmation** and silently overwrites. The README says so outright: *"use with caution! — There's NO confirmation when storing or overwriting a scene"*. With 12 hand-built studio scenes on this console (§2.3) that's a real hazard. | `README.md` |
+| **C9** | **The TCP receive handler's two line-reassembly branches are swapped, silently corrupting a line whenever a chunk boundary falls mid-line.** [`index.js`](companion-module-yamaha-rcp/index.js)'s `socket.on('data', ...)` splits the accumulated buffer on `\n`; when the chunk does *not* end on a line boundary (meaning the last split element is a genuinely incomplete line, the rest still in flight over the wire) the code clears the buffer and lets that incomplete fragment get parsed as if it were complete — instead of holding it for the next chunk, which is what the *other* branch (chunk *does* end on a boundary, where the trailing element is always just an empty string) does. Not new to this project — inherited from the original code, invisible under light/spaced-out traffic (most chunks happen to land on a line boundary), and only reliably reproducible under a heavy rapid-line stream, e.g. several concurrent `mtrstart` subscriptions. **Found via an intermittent, one-off crash during Phase 4 live testing (`variables.js`'s `setVar`, `msg.Address` undefined) that never reproduced on a quiet connection.** Fixed 2026-08-28: swapped the two branches back to their evidently-intended roles, plus a defensive guard in `setVar`'s `default` case so any other malformed-line edge case degrades to "drop that one line" instead of crashing the connection. | found investigating a background-task-flagged crash; reproduced and fixed without live hardware — a local loopback TCP server standing in for the console, deliberately splitting a response across two writes mid-line, proved the old code silently lost the value entirely (not even a crash, worse: silent data loss) and the fixed code reassembles it correctly |
 
 ---
 

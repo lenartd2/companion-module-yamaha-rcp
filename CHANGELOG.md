@@ -3,6 +3,26 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.11.1] - 2026-08-28
+
+Bug fix (C9, PLAN.md §8) found while investigating a crash noticed during Phase 4's own testing -
+not part of any planned phase.
+
+### Fixed
+
+- **A TCP response split across two network packets in the middle of a line could be silently
+  corrupted or crash the connection.** The receive handler's two line-reassembly branches were
+  swapped: a chunk that ends exactly on a line boundary was (correctly, if accidentally) handled the
+  same as one that doesn't, but a chunk that cuts a line in half had its still-incomplete tail
+  treated as a complete line instead of being held for the rest to arrive. Invisible under normal,
+  lightly-loaded traffic - most chunks happen to land on a line boundary - but far more likely to
+  actually happen under a heavy stream of rapid lines, e.g. several concurrent meter subscriptions.
+  Confirmed both the bug and the fix without touching the real console: a local loopback server
+  deliberately splitting a response mid-line showed the old code silently losing the value
+  entirely (not even a crash, worse - silent data loss) and the fixed code reassembling it
+  correctly. Also added a defensive guard in the variable-update code so any other malformed-line
+  edge case drops that one line instead of crashing the connection.
+
 ## [3.11.0] - 2026-08-28
 
 Phase 5 P1: auto-populated channel variables (PLAN.md §9). Everything else in Phase 5 (mic on-air +
