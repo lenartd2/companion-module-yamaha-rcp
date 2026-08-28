@@ -517,22 +517,46 @@ prminfo 21 "IO:Current/PortToPort/48VOn"          16 1 0  1 0 ""    integer any 
 prminfo 23 "IO:Current/PortToPort/HAGain"         16 1 0 64 0 "dB"  integer any rw 1
 ```
 
-**Remote head-amp gain (0–64 dB) and phantom power across 16 Dante channels.** In a Dante studio
-that's real capability — stagebox preamp control from a Stream Deck.
+**Remote head-amp gain (0–64 dB) and phantom power across 16 Dante channels.** Stagebox preamp
+control from a Stream Deck — genuine capability in a studio that has a Rio-class device.
 
-**But:** on this console right now,
+> ### This studio will never have one
+>
+> Confirmed by the operator on 2026-08-28: **no Rio-class device is planned for this studio, ever.**
+> These three parameters are therefore **permanently dormant here**, not merely untested.
+>
+> The console agrees. `HAAvailability` reads `0` on all 16 channels, and gain reads are refused:
+>
+> ```
+> get IO:Current/PortToPort/HAAvailability <0..15> 0  →  OK … 0     (all 16)
+> get IO:Current/PortToPort/HAGain 0 0                →  ERROR get AccessDenied
+> ```
+>
+> **Do not remove the code.** It shipped in v3.10.0, it is correct, it is part of upstream PR #76,
+> and it is useful to anyone who *does* have a Rio. It simply cannot be exercised here.
+>
+> **The write path can never be verified on this install.** If it needs proving, that has to happen
+> on other hardware — most realistically via feedback on the upstream PR. Treat any future
+> "let's finally test Dante HA" idea as already answered: no.
 
-```
-get IO:Current/PortToPort/HAAvailability 0 0  →  OK … 0
-get IO:Current/PortToPort/HAGain 0 0          →  ERROR get AccessDenied
-```
+**What preamp control this studio actually has.** Read live across all 16 inputs
+(`IO:Current/InCh/HAGain`, `IO:Current/InCh/48VOn`):
 
-`HAAvailability = 0` means no remote-HA device is currently patched, and reads of the gain are
-refused. Local analog HA works normally (`IO:Current/InCh/HAGain 0 0` → `50`).
+| | |
+|---|---|
+| CH1 | gain **50**, 48 V **on** — the only channel using a local analog head-amp |
+| CH2–16 | gain `0`, 48 V off |
+| Device | `Dev/SyncStatus` 5, `Dev/SystemStatus` 2, `Dev/48VActiveOn` 1 |
 
-**Implication for whoever builds this:** `AccessDenied` here is normal, not a bug. Gate the UI on
-`HAAvailability` and expect the feature to be untestable until a Rio-class device is on the Dante
-network. Don't debug it against an empty patch.
+So **console-controllable preamp gain covers CH1 only**. Everything else arrives over Dante from
+other manufacturers' devices — Bonjour shows `Shure-Decke`, `Sennh-Decke`, `Sennh-Stage`,
+`Sennh-Funk` (*Decke* = ceiling, *Funk* = wireless), which lines up with the ceiling and radio mics
+in §2.2.
+
+**Consequence worth knowing before anyone promises "gain control from Companion":** for the
+Dante-sourced channels, gain does not live on the DM3 at all. It lives on the Shure and Sennheiser
+devices, which have their own Companion modules. That is a different integration, not something
+this module can ever reach.
 
 ---
 
@@ -1015,7 +1039,9 @@ actual content of §7.2-§7.7; §7.8 is the user-facing confirmation that they a
   synthesised `Pickoff` table. Fixes C6 and removes the meter special-casing in `fmtCmd`.
 - **P4.2** Add the three `IO:Current/PortToPort/*` parameters. Gate the UI on `HAAvailability` and
   read [§5.3](#53-the-dante-remote-ha-caveat) first — `AccessDenied` with no remote HA patched is
-  expected behaviour, not a bug, and the feature is untestable until a Rio-class device is present.
+  expected behaviour, not a bug. **The operator has since confirmed no Rio-class device will ever
+  exist in this studio, so this half of the phase is permanently dormant here** — shipped, correct,
+  useful upstream, and unexercisable on this install.
 
 **Exit:** working stereo meters on ST and ST-IN; per-FX-return meters; stagebox gain and phantom
 from a button (or a clear "unavailable" state).
@@ -1083,10 +1109,11 @@ anything.
   Live-verified the read side end-to-end through the real module code: `HAAvailability` correctly
   reads back `0` (matches [§5.3](#53-the-dante-remote-ha-caveat)'s documented "nothing patched"
   state), and `get`s against `HAGain`/`48VOn` are refused by the console exactly as documented,
-  handled gracefully with no crash. **The actual gain/phantom read-write control path remains
-  genuinely unverifiable** — there is still no Rio-class device on this Dante network, and won't be
-  without the user physically patching one in, exactly as this document anticipated when Phase 4 was
-  planned.
+  handled gracefully with no crash. **The actual gain/phantom read-write control path is
+  permanently unverifiable on this install** — the operator confirmed on 2026-08-28 that no
+  Rio-class device is planned for this studio, ever. This is now a closed question, not a pending
+  one: if the write path ever needs proving, it has to happen on someone else's hardware, most
+  realistically through upstream PR #76. See [§5.3](#53-the-dante-remote-ha-caveat).
 
 ### Phase 5 — Broadcast feature layer — **P1 done, P2 code-complete but unverified, P3 paused**
 
@@ -1105,8 +1132,11 @@ Chosen priorities, in build order:
 3. **Studio presets** built on both.
 
 **Available but not requested** — recorded so they aren't lost: mix-minus/IFB helper (note the
-existing `Tms STR` ↔ `Teams DL/DR` relationship in §2.2), scene-store confirmation (C8), Dante
-remote HA (Phase 4). **Fader ramps are already done** in v3.6.0.
+existing `Tms STR` ↔ `Teams DL/DR` relationship in §2.2), scene-store confirmation (C8).
+**Fader ramps are already done** in v3.6.0. **Dante remote HA is *not* on this list any more** —
+it shipped in Phase 4 but is permanently dormant here, since no Rio-class device will ever be
+installed ([§5.3](#53-the-dante-remote-ha-caveat)). For the Dante-sourced channels, gain lives on
+the Shure/Sennheiser devices and their own Companion modules, not on the DM3.
 
 **Exit:** a show can be run from the Stream Deck without touching the console surface.
 

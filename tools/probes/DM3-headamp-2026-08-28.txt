@@ -1,0 +1,55 @@
+# DM3 head-amp availability snapshot - 2026-08-28 - firmware V3.00 - 192.168.128.9
+# All 16 inputs: local analog HA gain/48V, and PortToPort (remote/Dante) HA availability.
+# Context: no Rio-class device exists or is planned for this studio - see PLAN.md 5.3.
+
+OK get IO:Current/InCh/HAGain 0 0 50
+OK get IO:Current/InCh/48VOn 0 0 1
+OK get IO:Current/PortToPort/HAAvailability 0 0 0
+OK get IO:Current/InCh/HAGain 1 0 0
+OK get IO:Current/InCh/48VOn 1 0 0
+OK get IO:Current/PortToPort/HAAvailability 1 0 0
+OK get IO:Current/InCh/HAGain 2 0 0
+OK get IO:Current/InCh/48VOn 2 0 0
+OK get IO:Current/PortToPort/HAAvailability 2 0 0
+OK get IO:Current/InCh/HAGain 3 0 0
+OK get IO:Current/InCh/48VOn 3 0 0
+OK get IO:Current/PortToPort/HAAvailability 3 0 0
+OK get IO:Current/InCh/HAGain 4 0 0
+OK get IO:Current/InCh/48VOn 4 0 0
+OK get IO:Current/PortToPort/HAAvailability 4 0 0
+OK get IO:Current/InCh/HAGain 5 0 0
+OK get IO:Current/InCh/48VOn 5 0 0
+OK get IO:Current/PortToPort/HAAvailability 5 0 0
+OK get IO:Current/InCh/HAGain 6 0 0
+OK get IO:Current/InCh/48VOn 6 0 0
+OK get IO:Current/PortToPort/HAAvailability 6 0 0
+OK get IO:Current/InCh/HAGain 7 0 0
+OK get IO:Current/InCh/48VOn 7 0 0
+OK get IO:Current/PortToPort/HAAvailability 7 0 0
+OK get IO:Current/InCh/HAGain 8 0 0
+OK get IO:Current/InCh/48VOn 8 0 0
+OK get IO:Current/PortToPort/HAAvailability 8 0 0
+OK get IO:Current/InCh/HAGain 9 0 0
+OK get IO:Current/InCh/48VOn 9 0 0
+OK get IO:Current/PortToPort/HAAvailability 9 0 0
+OK get IO:Current/InCh/HAGain 10 0 0
+OK get IO:Current/InCh/48VOn 10 0 0
+OK get IO:Current/PortToPort/HAAvailability 10 0 0
+OK get IO:Current/InCh/HAGain 11 0 0
+OK get IO:Current/InCh/48VOn 11 0 0
+OK get IO:Current/PortToPort/HAAvailability 11 0 0
+OK get IO:Current/InCh/HAGain 12 0 0
+OK get IO:Current/InCh/48VOn 12 0 0
+OK get IO:Current/PortToPort/HAAvailability 12 0 0
+OK get IO:Current/InCh/HAGain 13 0 0
+OK get IO:Current/InCh/48VOn 13 0 0
+OK get IO:Current/PortToPort/HAAvailability 13 0 0
+OK get IO:Current/InCh/HAGain 14 0 0
+OK get IO:Current/InCh/48VOn 14 0 0
+OK get IO:Current/PortToPort/HAAvailability 14 0 0
+OK get IO:Current/InCh/HAGain 15 0 0
+OK get IO:Current/InCh/48VOn 15 0 0
+OK get IO:Current/PortToPort/HAAvailability 15 0 0
+OK get IO:Current/Dev/SyncStatus 0 0 5
+OK get IO:Current/Dev/SystemStatus 0 0 2
+OK get IO:Current/Dev/48VActiveOn 0 0 1
