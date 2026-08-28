@@ -9,6 +9,7 @@ an assumption, it says so.
 ## Contents
 
 1. [Orientation](#1-orientation) — what this project is, in one page
+1.1 [**Scope freeze**](#11-scope-freeze--read-before-proposing-features) — what is and isn't open work
 2. [The system as it exists](#2-the-system-as-it-exists) — console, network, **signal flow and the
    rules it imposes**, scenes
 3. [How we know what we know](#3-how-we-know-what-we-know) — research method, reproducible
@@ -46,6 +47,32 @@ doesn't do enough**. Both turned out to be real, and both are diagnosable in the
    There is no Automixer, no input EQ/dynamics, no recorder transport over RCP — those aren't
    module gaps, they're protocol limits. See [§5](#5-what-the-dm3-exposes--and-what-it-doesnt).
    This kills several plausible-sounding feature ideas; read it before promising anything.
+
+### 1.1 Scope freeze — read before proposing features
+
+**Decided by the operator, 2026-08-28:**
+
+> *"Let's not focus on changing channel-individual settings via Companion any further. Whatever is
+> currently possible, we'll accept."*
+
+The per-channel control surface is **done**. Phases 1–5 P2 shipped a lot of it, and that is the
+agreed stopping point. Concretely:
+
+| Still in scope | Out of scope |
+|---|---|
+| Correctness fixes and regressions | New per-channel parameter features |
+| Performance work (§7) | Mix-minus / IFB helpers |
+| Live verification of what already shipped | Studio presets built on per-channel control (Phase 5 P3) |
+| Upstream PR #76 | Expanding parameter-table coverage |
+| Documentation | Anything requiring hardware that will never exist here (§5.3) |
+
+This is not a pause — it is an acceptance. **Do not open feature work in the right-hand column
+without asking first**, and treat "we could also control X per channel" as answered: we could, and
+we are choosing not to.
+
+The one exception worth raising: a **shipped default that is actively unsafe here** is a
+correctness issue, not a feature. There is exactly one — see the `micExclusiveMode` warning in
+[§9 Phase 5](#phase-5--broadcast-feature-layer--p1-done-p2-code-complete-but-unverified-p3-paused).
 
 ---
 
@@ -148,24 +175,30 @@ show silently.
 2. **CH7/8 (Media PC) must stay off Main L/R.** The stream already receives Media PC audio via
    **NDI**; routing it to the stream bus too would double the source. Any "send everything to
    stream" helper must skip 7 and 8.
-3. **Mics are split across channel pairs.** CH1 and CH3 are the *same physical ceiling microphone*
-   — CH1 carries it to Teams and the stream, CH3 carries it to local reinforcement. CH2 and CH4 are
-   the same pair for the couch mic. The console labels corroborate this: `Tisch` / `TischV` and
-   `Couch` / `CouchV`, where `V` is *Verstärkung* (reinforcement).
-   **Consequence: "mute the stage mic" means muting CH1 *and* CH3 together.** A per-channel on-air
-   button would leave one half of each mic live. Phase 5 needs a **logical mic** abstraction:
+3. **CH1–4 are two ceiling capsules split into four channels serving two unrelated jobs.**
+   Explained by the operator, 2026-08-28 — and it is *not* the simple pairing an earlier draft of
+   this document assumed.
 
-   | Logical mic | Channels | Reaches |
-   |---|---|---|
-   | Ceiling Stage | 1 + 3 | Teams, stream, centre lift, stage speakers |
-   | Ceiling Couch | 2 + 4 | Teams, stream, lift-all |
-   | Handheld 1 | 5 | Teams, stream, stage speakers |
-   | Handheld 2 | 6 | Teams, stream, centre lift, stage speakers |
+   | Ch | Job | Destination | Driven by |
+   |---|---|---|---|
+   | **1** | Stage speaker → **live-stream audience only** | stream | a **sequencing button already in Companion**, pressed when the speaker in front of the camera is ready to talk |
+   | **2** | Couch → **live-stream audience only** | stream | same sequencing button flow |
+   | **3** | **Voice lift from the stage** to the audience and back office | Mix 3, 5, 6 | operator, per segment |
+   | **4** | **Voice lift from the couch/discussion** to the stage and back office, and for audience reaction / Q&A | Mix 4 | operator, per segment |
 
-   *This pairing is inferred from labels and routing and should be confirmed against the physical
-   patch before it is built on.*
-4. **There is no monitor bus, so there is nothing to "dim."** See §2.4 — this changes the Phase 5
-   design substantially.
+   Physically CH1 and CH3 are the same ceiling capsule (`Tisch` / `TischV`, *V* =
+   *Verstärkung*/reinforcement), as are CH2 and CH4. **But operationally they are independent
+   controls with different triggers**, and both halves are legitimately on at once — the speaker
+   is heard by the stream (CH1) *and* lifted into the room (CH3) simultaneously.
+
+   > **⚠️ The earlier "logical mic" idea in this document was wrong and has been removed.** It
+   > proposed treating 1+3 and 2+4 as single mics to be muted together. Doing that would cut the
+   > stream feed whenever reinforcement was switched, or vice versa. Do not resurrect it.
+
+4. **CH3 and CH4 are mutually exclusive — never both on.** Stage lift and couch lift are alternating
+   modes, selected by what the segment needs. This is a genuine interlock and the only exclusivity
+   relationship in the patch. It does **not** extend to CH1/CH2, or to the handhelds.
+5. **There is no monitor bus, so there is nothing to "dim."** See §2.4.
 
 ### 2.3 What the console actually reports
 
@@ -1115,7 +1148,7 @@ anything.
   one: if the write path ever needs proving, it has to happen on someone else's hardware, most
   realistically through upstream PR #76. See [§5.3](#53-the-dante-remote-ha-caveat).
 
-### Phase 5 — Broadcast feature layer — **P1 done, P2 code-complete but unverified, P3 paused**
+### Phase 5 — Broadcast feature layer — **P1 done, P2 code-complete but unverified, P3 CLOSED**
 
 Chosen priorities, in build order:
 
@@ -1129,7 +1162,8 @@ Chosen priorities, in build order:
    `Monitor/Fader/Level`, `Monitor/On`, `Monitor/CueInterruption` — all present. v3.6.0's fade
    engine gives a smooth dim rather than a jump. **Read §2.2: this room runs voice lift, so the
    feedback risk being mitigated is real.** Mics are CH1–6 and CH15–16.
-3. **Studio presets** built on both.
+3. ~~**Studio presets** built on both.~~ **Closed unbuilt, 2026-08-28** — falls inside the §1.1
+   scope freeze. Do not start it.
 
 **Available but not requested** — recorded so they aren't lost: mix-minus/IFB helper (note the
 existing `Tms STR` ↔ `Teams DL/DR` relationship in §2.2), scene-store confirmation (C8).
@@ -1168,10 +1202,28 @@ the Shure/Sennheiser devices and their own Companion modules, not on the DM3.
 >   read §2.4's warning first: pulling a lift send is *audible to the room*, unlike dimming a
 >   control-room monitor. It must be operator-driven and visible, not a silent background safety
 >   behaviour.
-> - The `micChannels` default (`1,2,3,4,5,6,15,16`) needs revisiting against §2.2 rule 3: CH1/CH3
->   and CH2/CH4 are **the same physical microphones** split across channel pairs, and CH15/16 are
->   currently unpatched beltpacks carrying factory-default routing. Exclusive-mic mode over that
->   list would treat one physical mic as two independent sources.
+> ### ⚠️ `micExclusiveMode`'s shipped default would break a live show here
+>
+> This is the more serious half of the correction, learned from the operator's CH1–4 explanation
+> (§2.2 rule 3) on 2026-08-28.
+>
+> `micChannels` ships defaulting to `1,2,3,4,5,6,15,16`, and `micExclusiveMode` turns off **every
+> other listed channel** the instant one turns on. In this studio that is actively wrong:
+>
+> - **CH1 (stream) and CH3 (stage lift) are legitimately on together** — the speaker is heard by
+>   the stream *and* reinforced into the room at the same time. Exclusive mode would kill one the
+>   moment the other opened. Same for CH2/CH4.
+> - **CH1/CH2 are driven by an existing Companion sequencing button.** Exclusive mode would fight
+>   that automation directly.
+> - CH15/16 are unpatched beltpacks carrying factory-default routing.
+>
+> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4), and nothing else.
+>
+> So: **leave `micExclusiveMode` off.** If it is ever wanted, its channel list must be `3,4` and
+> nothing more — which makes it an interlock, not a mic-exclusivity feature, and it should probably
+> be renamed to say so. Changing the shipped default from `1,2,3,4,5,6,15,16` to empty is a
+> one-line foot-gun removal worth doing before anyone enables this in anger; flagged rather than
+> done, given the scope freeze in §1.1.
 
 **P1 closed 2026-08-28, shipped as v3.11.0**, built and tested while offsite (§7.6's dependency
 was satisfied back in Phase 3). Every fader-level channel (`isFaderLevel` + `RW` includes `w` — the
@@ -1222,8 +1274,8 @@ no clipping the room's reinforcement. That needs a human actually listening whil
 this specific room's voice-lift setup (§2.2) — there's no way to mechanically verify "does this
 sound safe" the way §7.2's cache-diffing or C6's address-matching could be verified against logged
 data. **Do not enable `enableMicMonitorDim` or `micExclusiveMode` on the live connection until
-that's been done with the user present.** P3 (studio presets built on P2) still needs this same
-live session before it can be attempted at all.
+that's been done with the user present.** P3 is now **closed rather than paused** — it fell inside
+the §1.1 scope freeze before it was ever started.
 
 ### Phase 6 — Package, document, upstream
 
@@ -1380,8 +1432,10 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
    automation starts flipping channels on? (§2.3)
 3. **Every matrix send is On at −∞, so MTRX 1/2 receives nothing.** Is USB recording fed some other
    way — a direct out or Dante patch — or is the recording bus simply not commissioned? (§2.3)
-4. **Are CH1/CH3 and CH2/CH4 the same physical microphones?** Labels (`Tisch`/`TischV`) and routing
-   both say yes. Phase 5's logical-mic grouping depends on it. (§2.2 rule 3)
+4. ~~**Are CH1/CH3 and CH2/CH4 the same physical microphones?**~~ **Answered 2026-08-28.** Yes
+   physically, but they are independent controls doing different jobs — CH1/CH2 feed the stream
+   under an existing Companion sequencing button, CH3/CH4 are alternating voice-lift modes. The
+   "logical mic" grouping this question was asked in service of has been withdrawn. (§2.2 rule 3)
 5. **CH15/16 are labelled as beltpacks but carry factory-default routing** to Teams, Sub and the
    stream. Are they patched? If they get used, they reach air with no deliberate routing decision.
 6. **Is any monitoring planned?** If not, the Monitor Auto-Dim feature stays permanently dormant and
@@ -1393,6 +1447,12 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
 
 8. **Where does Companion run, and how are dev modules loaded there?** Needed to verify end to end
    (§10.3).
+9. **What exactly does the existing CH1/CH2 sequencing button do?** There is already Companion
+   automation driving the stream mics (§2.2 rule 3). Anything this module does around channel-on
+   state can collide with it — most obviously `micExclusiveMode`. Worth reading that button's
+   action list before enabling anything that writes `InCh/Fader/On`.
+10. **Should `micChannels` default to empty?** Its shipped default would make `micExclusiveMode`
+    actively dangerous here (§9 Phase 5). One-line change, flagged not done under the §1.1 freeze.
 
 **Assumptions a successor should challenge:**
 
