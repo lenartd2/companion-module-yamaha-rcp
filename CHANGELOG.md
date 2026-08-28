@@ -3,6 +3,16 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.12.1] - 2026-08-28
+
+Narrows Exclusive Mic Mode's default channel list from v3.12.0's `1,2,3,4,5,6,15,16` to `3,4`.
+Exclusive Mic Mode itself still defaults to off, so this closes a footgun rather than fixing a live
+bug: the old default assumed every listed channel was mutually exclusive, but on install it's
+common for two channels to be legitimate simultaneous copies of the same physical mic (one to a
+stream/send mix, one to local reinforcement) - enabling the feature with that default would turn
+one off the instant the other opened. `3,4` is a safer, clearly-a-placeholder starting point;
+review it against your own routing regardless before enabling the feature.
+
 ## [3.12.0] - 2026-08-28
 
 Phase 5 P2: mic on-air monitor dim + exclusive mic mode (PLAN.md §9). **Built and logic-tested

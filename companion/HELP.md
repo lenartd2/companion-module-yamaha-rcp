@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.12.0
+## Yamaha Remote Control Protocol - v3.12.1
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -71,6 +71,11 @@ Note that this module only works to connected hardware. It does not work with th
 > simulation only, never against a real console** - verify carefully (with someone actually
 > listening in the room) before relying on it for a live show, especially if your room has any kind
 > of open-mic reinforcement (voice lift, IFB, etc.) where a dimming mistake could cause feedback.
+> **Mic Channel Numbers defaults to `3,4`** - a placeholder, not a guess at your mic count. Exclusive
+> Mic Mode turns off *every other listed* channel the instant one opens, so listing channels that
+> are meant to be on simultaneously (e.g. a stream feed and a separate reinforcement feed from the
+> same physical mic) will fight your own routing. Set this to the channels that should genuinely
+> never be on together, and nothing else.
 
 **AUTO-POPULATED CHANNEL VARIABLES**
 

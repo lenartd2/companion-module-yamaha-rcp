@@ -1205,14 +1205,15 @@ the Shure/Sennheiser devices and their own Companion modules, not on the DM3.
 >   read §2.4's warning first: pulling a lift send is *audible to the room*, unlike dimming a
 >   control-room monitor. It must be operator-driven and visible, not a silent background safety
 >   behaviour.
-> ### ⚠️ `micExclusiveMode`'s shipped default would break a live show here
+> ### ✅ `micExclusiveMode`'s shipped default was fixed, 2026-08-28
 >
 > Learned from the operator's CH1–4 explanation (§2.2 rule 3) on 2026-08-28. **The feature itself
 > went out of scope the same day** — it now lives in [§9 Backlog](#backlog--nice-to-have-not-scheduled).
 > This note stays here because the code is shipped and someone could still tick the box.
 >
-> `micChannels` ships defaulting to `1,2,3,4,5,6,15,16`, and `micExclusiveMode` turns off **every
-> other listed channel** the instant one turns on. In this studio that is actively wrong:
+> `micChannels` originally shipped (v3.12.0) defaulting to `1,2,3,4,5,6,15,16`, and
+> `micExclusiveMode` turns off **every other listed channel** the instant one turns on. In this
+> studio that was actively wrong:
 >
 > - **CH1 (stream) and CH3 (stage lift) are legitimately on together** — the speaker is heard by
 >   the stream *and* reinforced into the room at the same time. Exclusive mode would kill one the
@@ -1221,13 +1222,12 @@ the Shure/Sennheiser devices and their own Companion modules, not on the DM3.
 >   that automation directly.
 > - CH15/16 are unpatched beltpacks carrying factory-default routing.
 >
-> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4), and nothing else.
->
-> So: **leave `micExclusiveMode` off.** If it is ever wanted, its channel list must be `3,4` and
-> nothing more — which makes it an interlock, not a mic-exclusivity feature, and it should probably
-> be renamed to say so. Changing the shipped default from `1,2,3,4,5,6,15,16` to empty is a
-> one-line foot-gun removal worth doing before anyone enables this in anger; flagged rather than
-> done, given the scope freeze in §1.1.
+> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4), and nothing else. So
+> the shipped default was narrowed from `1,2,3,4,5,6,15,16` to `3,4` in v3.12.1, at the operator's
+> explicit request during a final pre-ship review — not new feature work, closing a documented
+> hazard in something already shipped, so it didn't need to wait for the feature to be revived.
+> `micExclusiveMode` itself still defaults to off; this only changes what happens if someone turns
+> it on without also reviewing `micChannels`.
 
 **P1 closed 2026-08-28, shipped as v3.11.0**, built and tested while offsite (§7.6's dependency
 was satisfied back in Phase 3). Every fader-level channel (`isFaderLevel` + `RW` includes `w` — the
@@ -1294,29 +1294,30 @@ Nothing here should be started without the operator raising it first.
 
 | Item | State | If it is ever revived |
 |---|---|---|
-| **Single-mic (exclusive) mode** | Shipped in v3.12.0, **off by default, out of scope 2026-08-28** | ⚠️ Read the hazard note below *before* enabling it. |
+| **Single-mic (exclusive) mode** | Shipped in v3.12.0, **off by default, out of scope 2026-08-28**; default channel list narrowed to `3,4` in v3.12.1 | Read the note below before enabling — the narrowed default still needs reviewing against your own routing, it's just no longer a landmine by default. |
 | **Monitor auto-dim** | Shipped in v3.12.0, off by default | Premise doesn't hold here — there is no monitor bus (§2.4). Only meaningful if one is ever configured. |
 | **Reinforcement-bus feedback mitigation** | Never built | The successor idea to monitor auto-dim, acting on Mix 3/4/5/6. Read §2.4 first: pulling a lift send is *audible to the room*, so it must be operator-driven and visible, never a silent background behaviour. |
 | **Mix-minus / IFB helper** | Never built | Mix 1 ↔ CH10/11 is already a correct mix-minus by hand (§2.2 rule 1). A helper would have to preserve that, not rediscover it. |
 | **Studio presets** (was Phase 5 P3) | Closed unbuilt | Was to be built on the two features above; inherits their status. |
 
-> #### ⚠️ Single-mic mode carries an unsafe default — read before enabling
+> #### ✅ Single-mic mode's default hazard was closed, 2026-08-28 — still read before enabling
 >
-> `micExclusiveMode` ships with `micChannels` defaulting to `1,2,3,4,5,6,15,16`, and turns off every
-> *other* listed channel the instant one opens. In this studio that would:
+> `micExclusiveMode` originally shipped (v3.12.0) with `micChannels` defaulting to
+> `1,2,3,4,5,6,15,16`, turning off every *other* listed channel the instant one opens. In this
+> studio that would have:
 >
-> - **kill CH1 the moment CH3 opened** — the stream feed drops mid-sentence while the speaker is
+> - **killed CH1 the moment CH3 opened** — the stream feed drops mid-sentence while the speaker is
 >   being lifted into the room (§2.2 rule 3);
-> - **fight the existing Companion sequencing button** that drives CH1/CH2.
+> - **fought the existing Companion sequencing button** that drives CH1/CH2.
 >
-> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4).
+> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4), so v3.12.1 narrowed
+> the shipped default to exactly that — an *interlock*, not mic exclusivity, though the feature
+> keeps its original name since it wasn't otherwise touched (still out of scope per §1.1).
 >
-> So whenever this is revived, **step one is narrowing `micChannels` to `3,4` — or emptying the
-> default outright.** That makes it an *interlock* rather than mic exclusivity, and it should
-> probably be renamed to say so. The one-line default change was offered and deliberately left
-> undone when the feature went out of scope; it stays undone until the feature comes back.
->
-> Until then: **leave `micExclusiveMode` off.** It is off by default, so no action is required today.
+> Until it's revived: **leave `micExclusiveMode` off.** It is off by default, so no action is
+> required today — but if it's ever turned on for a *different* purpose, `3,4` is still just this
+> studio's one real interlock, not a safe assumption for a new use case. Review `micChannels`
+> against whatever it's being turned on for, don't assume the default already covers it.
 
 ---
 
@@ -1491,9 +1492,10 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
    automation driving the stream mics (§2.2 rule 3). Anything this module does around channel-on
    state can collide with it — most obviously `micExclusiveMode`. Worth reading that button's
    action list before enabling anything that writes `InCh/Fader/On`.
-10. ~~**Should `micChannels` default to empty?**~~ **Settled 2026-08-28** — single-mic mode went
-    out of scope, so the change stays undone and the hazard note travels with the feature in the
-    §9 backlog. Revisit only if the feature is revived.
+10. ~~**Should `micChannels` default to empty?**~~ **Settled 2026-08-28** — narrowed to `3,4`
+    instead (the actual CH3↔CH4 interlock, §2.2 rule 4), done in v3.12.1 as a final pre-ship
+    safety pass despite the feature itself staying out of scope. The hazard note travels with the
+    feature in the §9 backlog regardless, since `3,4` is still specific to this studio's patch.
 
 **Assumptions a successor should challenge:**
 

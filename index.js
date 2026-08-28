@@ -249,9 +249,9 @@ class instance extends InstanceBase {
 				id: 'micChannels',
 				label: 'Mic Channel Numbers (comma-separated, InCh)',
 				tooltip:
-					'Which input channel numbers (1-based) count as microphones for Monitor Auto-Dim and/or Exclusive Mic Mode above. This is a studio-specific patch decision - example: 1,2,3,4,5,6,15,16',
+					'Which input channel numbers (1-based) count as microphones for Monitor Auto-Dim and/or Exclusive Mic Mode above. This is a studio-specific patch decision - the default (3,4) is this studio\'s only genuine interlock pair, not "every mic channel"; widen it only if you specifically mean for opening one of these channels to close all the others listed.',
 				width: 8,
-				default: '1,2,3,4,5,6,15,16',
+				default: '3,4',
 				isVisibleExpression: '$(options:enableMicMonitorDim) || $(options:micExclusiveMode)',
 			},
 		]

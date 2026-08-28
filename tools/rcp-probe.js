@@ -168,7 +168,7 @@ socket.on('error', (err) => {
 				'  dns-sd -B _netaudio-arc._udp local     # finds the Dante interface, NOT this one\n' +
 				'  nmap -p 49280 --open 192.168.128.0/24  # finds the Network (control) interface\n' +
 				'Also check you are not pointed at the Dante interface: RCP lives only on the\n' +
-				'Network port ("For Mixer Control"), which is a separate address.'
+				'Network port ("For Mixer Control"), which is a separate address.',
 		)
 	}
 	process.exit(1)
