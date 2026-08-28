@@ -1339,14 +1339,18 @@ added as remote `fork` (`origin` deliberately left pointing at `bitfocus/…` so
 keeps meaning "check upstream", not "check my fork"). Push there with `git push fork
 broadcast-studio`.
 
-**The Phase 1 migration was also offered upstream:**
+**This work was also offered upstream:**
 [bitfocus/companion-module-yamaha-rcp#76](https://github.com/bitfocus/companion-module-yamaha-rcp/pull/76),
 opened from a *separate* branch, `upstream-api21-migration` (based on `v3.6.0`, not
 `broadcast-studio` — deliberately built without ever touching this file in its history, since
-this doc has real network/studio detail that has no place in a public PR). That branch carries
-only the module source, `CHANGELOG.md` and `HELP.md`; if Phase 2+ work is also offered upstream
-later, repeat that pattern — cherry-pick or re-checkout the relevant source files onto a clean
-branch off whatever the PR's base should be, don't PR `broadcast-studio` directly.
+this doc has real network/studio detail that has no place in a public PR). Originally Phase 1
+only; **updated 2026-08-28 to also carry Phases 2–4, Phase 5 P1, and the C9 fix** — five further
+commits, one per phase, each built the same way (checkout the phase's final file states from
+`broadcast-studio` onto this branch, strip any `PLAN.md` references the checkout brings back into
+`CHANGELOG.md`). **Phase 5 P2 is deliberately excluded** — untested against real hardware and, per
+§2.4/§9, built on a premise (a monitor bus) that doesn't hold even here, so it isn't something to
+offer other installs yet. If more work goes upstream later, repeat the same per-phase checkout
+pattern onto this branch rather than PR'ing `broadcast-studio` directly.
 
 ### 10.2 Build
 
@@ -1393,22 +1397,23 @@ minimum before calling any phase done:
    log) — that inefficiency is real but explicitly Phase 3's to fix, not a Phase 1 regression.
    No visible flicker or spurious state on the currently-displayed page, confirmed by direct
    observation.
-5. ⬜ Enable metering; confirm ST meters show **both** channels (the C6 regression test). Only a
-   mono `InCh` meter was tested (and confirmed rendering correctly after the ARGB fix) — **not**
-   the `St` stereo pair this item is actually about. Expect this to still fail: C6 (metering
-   reconstructed from a synthetic `Pickoff` model instead of the console's real flat enumeration)
-   is unchanged, deliberately deferred to Phase 4.
+5. ✅ Enable metering; confirm ST meters show **both** channels (the C6 regression test). Was
+   failing as of Phase 1 (only a mono `InCh` meter had been tested, not the `St` stereo pair this
+   item is actually about) — **fixed and live-verified in Phase 4** (2026-08-28): the console's own
+   17-row flat meter enumeration replaced the synthetic `Pickoff` model, all 17 real `mtrstart`
+   subscriptions confirmed sending/batching correctly with real streamed data landing. See Phase
+   4's write-up for the full verification detail.
 6. ✅ Delete the connection; confirm no timers keep firing (C2). This was never Phase 1's to fix
    (correctly identified as still-open by the 2026-08-25 audit, `YamahaRCP/audit/AUDIT.md`) — it's
    listed here for completeness. Fixed and live-verified as part of Phase 2, 2026-08-27: see
    Phase 2's write-up above.
 
 **Net: Phase 1's own exit bar ("loads and runs... existing pages behave identically") is closed,
-within Phase 1's actual scope.** 5 of 6 items confirmed live (2026-08-25 through 2026-08-27
-sessions, item 6 via Phase 2's own testing); the remaining item (5, stereo metering / C6) is a
-pre-existing bug Phase 1 never intended to fix, correctly deferred to Phase 4 — its continued
-failure is expected, not outstanding migration work. **Phase 1 can now be considered genuinely
-done.**
+within Phase 1's actual scope.** 4 of 6 items confirmed live during Phase 1 itself
+(2026-08-25/27); the other 2 were pre-existing bugs Phase 1 never intended to fix, and both have
+since closed too — item 6 (C2, KeepAlive leak) via Phase 2, item 5 (C6, stereo metering) via
+Phase 4. **All 6 of this checklist's items are now confirmed. Phase 1 can be considered genuinely
+done**, and so, as of 2026-08-28, can every phase this checklist was tracking.
 
 Use `tools/rcp-probe.js` to read ground truth from the console at any point — it's read-only and
 safe to run alongside Companion, since the DM3 accepts multiple simultaneous control connections.
