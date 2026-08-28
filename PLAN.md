@@ -951,7 +951,7 @@ anything.
   without the user physically patching one in, exactly as this document anticipated when Phase 4 was
   planned.
 
-### Phase 5 — Broadcast feature layer — **P1 done, P2/P3 deliberately paused**
+### Phase 5 — Broadcast feature layer — **P1 done, P2 code-complete but unverified, P3 paused**
 
 Chosen priorities, in build order:
 
@@ -990,16 +990,40 @@ correctly coalesced into one `setVariableDefinitions()` call by §7.6. One narro
 `InvalidArgument` when actually queried live — confirmed via a direct probe, not assumed — so only
 `Fx`'s first value is covered; every other fader type is fully covered.
 
-**P2 (mic on-air + monitor dim) and P3 (studio presets built on it) were deliberately not
-attempted**, and shouldn't be attempted the same way P1 was (autonomous, offsite, no user at the
-console). Unlike everything else in Phases 1-5 P1, this item *writes* to `Monitor/Fader/Level` in
-response to a live mic-open/close event on a room this document itself flags as running voice
-lift — real feedback risk, not a hypothetical one. There is no way to mechanically verify "does the
-dim actually happen smoothly, at a sensible depth, without causing feedback or clipping the room's
-reinforcement" the way §7.2's cache-diffing or C6's address-matching could be verified against
-logged data — this genuinely needs a human listening in the room while it's tested, the same
-category of thing this session has consistently deferred (never triggering a real scene recall,
-never sending a real Dante-HA write). Pick this up with the user present.
+**P2 (mic on-air + monitor dim) is code-complete as of 2026-08-28, shipped as v3.12.0, but
+deliberately NOT live-verified** — built at the user's explicit request ("write the code now, off
+by default") after they asked to hold all real-console testing until they're back on premise.
+**Both new options default to off; existing behaviour is unchanged for anyone who doesn't enable
+them.** Two independent, config-gated behaviours in the new `micOnAir.js`, hooked into the same
+`addToDataStore` choke point Phase 5 P1 uses: **Monitor Auto-Dim** dims `Monitor/Fader/Level` by a
+configurable amount (via the existing fade engine, for a smooth transition) whenever any channel
+listed in the new "Mic Channel Numbers" option is on, and restores it to the *exact* pre-dim level
+(captured at the moment dimming started, not a fixed target) once they're all off; **Exclusive Mic
+Mode** turns off every other listed channel the instant one turns on. Which channels count as
+"microphones" is a config option (`micChannels`, comma-separated, defaulting to this studio's own
+patch: 1,2,3,4,5,6,15,16) rather than hardcoded — a patch is studio-specific, not a module-wide
+constant.
+
+Verified as thoroughly as possible *without* the real console: a local loopback TCP server
+scripted to answer exactly what this feature depends on, and to emit simulated
+"someone pressed a physical button" NOTIFY events for mic channels turning on/off, confirmed the
+dim math (dimmed to exactly the configured amount below the captured starting level, a smooth
+26-step fade), the exact restore (back to precisely the pre-dim level, not an approximation), and
+exclusive-mode enforcement (a previously-open channel correctly turned off when another opened)
+— all with zero crashes. This caught one real bug in the new code before it ever reached hardware:
+the `fadeCmd` calls were initially missing `prefix: 'set'`, which every other caller in the
+codebase sets and `fmtCmd` requires to pick the wire verb - without it, `fmtCmd` was emitting
+`undefined MIXER:Current/Monitor/Fader/Level ...`, a command that would never have done anything on
+a real console. Caught and fixed by the same loopback test before this was ever a live risk.
+
+**What this testing genuinely cannot confirm, and what P3 also still needs a live console for:**
+whether the dim actually sounds right in the room — a sensible depth, smooth enough, no feedback,
+no clipping the room's reinforcement. That needs a human actually listening while it's tested, on
+this specific room's voice-lift setup (§2.2) — there's no way to mechanically verify "does this
+sound safe" the way §7.2's cache-diffing or C6's address-matching could be verified against logged
+data. **Do not enable `enableMicMonitorDim` or `micExclusiveMode` on the live connection until
+that's been done with the user present.** P3 (studio presets built on P2) still needs this same
+live session before it can be attempted at all.
 
 ### Phase 6 — Package, document, upstream
 

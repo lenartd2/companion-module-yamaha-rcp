@@ -3,6 +3,32 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.12.0] - 2026-08-28
+
+Phase 5 P2: mic on-air monitor dim + exclusive mic mode (PLAN.md §9). **Built and logic-tested
+against a local simulation only, at the user's explicit request to hold all real-console testing
+until they're back on premise - never verified against real hardware or in the room.** Both new
+options default to off; nothing changes for anyone who doesn't turn them on.
+
+### Added
+
+- **Monitor Auto-Dim** (off by default): dims the Monitor fader by a configurable amount, using the
+  existing fade engine for a smooth transition, whenever any channel listed in the new "Mic Channel
+  Numbers" option is on - and restores it to the exact level it was at before dimming once they're
+  all off again, not a fixed target.
+- **Exclusive Mic Mode** (off by default, independent of Monitor Auto-Dim): the instant one listed
+  mic channel turns on, every other listed mic channel is immediately turned off.
+- Which channels count as "microphones" is entirely configurable (new "Mic Channel Numbers" option,
+  comma-separated, defaults to this studio's own patch: 1,2,3,4,5,6,15,16) - not hardcoded, since
+  that's a studio-specific patch decision other installs would need to set differently.
+
+### Known limitations
+
+- **Not verified against a real console or in a real room.** Confirmed correct against a scripted
+  local simulation (dim math, exact restore, exclusive-mode enforcement, no crashes) but that
+  cannot confirm the feature sounds right or is safe in an actual room with live microphones and
+  reinforcement. Test carefully, with someone listening, before relying on this for a live show.
+
 ## [3.11.1] - 2026-08-28
 
 Bug fix (C9, PLAN.md §8) found while investigating a crash noticed during Phase 4's own testing -

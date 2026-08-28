@@ -7,6 +7,7 @@ const { InstanceBase, Regex, InstanceStatus, combineRgb, TCPHelper } = require('
 const paramFuncs = require('./paramFuncs')
 const actionFuncs = require('./actions.js')
 const varFuncs = require('./variables.js')
+const micOnAir = require('./micOnAir.js')
 const upgrade = require('./upgrade')
 
 const RCP_PORT = 49280
@@ -208,6 +209,50 @@ class instance extends InstanceBase {
 				label:
 					'**NOTE** Do not enable KeepAlive unless you know what it means. It is generally not needed and will increase network traffic.',
 				width: 12,
+			},
+			{
+				type: 'static-text',
+				id: 'micMonitorDimHeader',
+				label:
+					'**Mic On-Air / Monitor Dim (EXPERIMENTAL)** - off by default and not yet verified against real hardware. Automatically dims the Monitor bus when a listed channel opens and restores it exactly when they are all closed again, and/or enforces only one open mic at a time. Test carefully (with someone listening) before relying on this live.',
+				width: 12,
+			},
+			{
+				type: 'checkbox',
+				id: 'enableMicMonitorDim',
+				label: 'Enable Monitor Auto-Dim?',
+				tooltip:
+					'Dims the Monitor fader by "Monitor Dim Amount" below whenever any listed mic channel is on, and restores it to the exact level it was at before dimming once they are all off again.',
+				width: 4,
+				default: false,
+			},
+			{
+				type: 'textinput',
+				id: 'micMonitorDimDb',
+				label: 'Monitor Dim Amount (dB)',
+				tooltip: 'How far below the Monitor level at the moment a mic opens to dim - e.g. 20 means dim by 20 dB.',
+				width: 4,
+				default: '20',
+				isVisibleExpression: '$(options:enableMicMonitorDim)',
+			},
+			{
+				type: 'checkbox',
+				id: 'micExclusiveMode',
+				label: 'Exclusive Mic Mode?',
+				tooltip:
+					'When a listed mic channel turns on, every other listed mic channel is immediately turned off. Independent of Monitor Auto-Dim above - can be used on its own.',
+				width: 4,
+				default: false,
+			},
+			{
+				type: 'textinput',
+				id: 'micChannels',
+				label: 'Mic Channel Numbers (comma-separated, InCh)',
+				tooltip:
+					'Which input channel numbers (1-based) count as microphones for Monitor Auto-Dim and/or Exclusive Mic Mode above. This is a studio-specific patch decision - example: 1,2,3,4,5,6,15,16',
+				width: 8,
+				default: '1,2,3,4,5,6,15,16',
+				isVisibleExpression: '$(options:enableMicMonitorDim) || $(options:micExclusiveMode)',
 			},
 		]
 		return config
@@ -1385,6 +1430,16 @@ class instance extends InstanceBase {
 			// a synthetic feedback-shaped cmd, exactly as a real feedback callback would build one.
 			if (this._channelVariableAddresses?.has(dsAddr)) {
 				varFuncs.fbCreatesVar(this, { Address: dsAddr, X: dsX + 1, createVariable: true }, cmd.Val, {})
+			}
+
+			// Phase 5 P2 (PLAN.md §9) - off by default (config.enableMicMonitorDim /
+			// config.micExclusiveMode), NOT YET LIVE-VERIFIED. See micOnAir.js.
+			if (
+				(this.config.enableMicMonitorDim || this.config.micExclusiveMode) &&
+				dsAddr === micOnAir.MIC_ON_ADDRESS &&
+				micOnAir.getMicChannelIndexes(this).includes(dsX)
+			) {
+				micOnAir.handleMicOnChange(this, dsX, cmd.Val == 1)
 			}
 		}
 	}

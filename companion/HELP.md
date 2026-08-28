@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.11.1
+## Yamaha Remote Control Protocol - v3.12.0
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -60,6 +60,17 @@ Note that this module only works to connected hardware. It does not work with th
 > remote head-amp is actually patched right now - it reads `0` (and gain/phantom reads and writes
 > get refused by the console) until one is. This is normal on a system with no Rio-class device on
 > the Dante network, not a fault - check `HAAvailability` before building a button around gain/48V.
+
+**MIC ON-AIR / MONITOR DIM (EXPERIMENTAL)**
+
+> **v3.12.0:** two new, independent, off-by-default connection options: **Enable Monitor
+> Auto-Dim?** dims the Monitor bus by a configurable amount whenever any channel listed in **Mic
+> Channel Numbers** is on, and restores it to the exact level it was at before dimming once they're
+> all off again. **Exclusive Mic Mode?** turns off every other listed channel the instant one of
+> them turns on. Either can be used alone. **This has been built and tested against a local
+> simulation only, never against a real console** - verify carefully (with someone actually
+> listening in the room) before relying on it for a live show, especially if your room has any kind
+> of open-mic reinforcement (voice lift, IFB, etc.) where a dimming mistake could cause feedback.
 
 **AUTO-POPULATED CHANNEL VARIABLES**
 
