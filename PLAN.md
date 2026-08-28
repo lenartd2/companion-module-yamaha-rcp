@@ -62,17 +62,20 @@ agreed stopping point. Concretely:
 |---|---|
 | Correctness fixes and regressions | New per-channel parameter features |
 | Performance work (§7) | Mix-minus / IFB helpers |
-| Live verification of what already shipped | Studio presets built on per-channel control (Phase 5 P3) |
-| Upstream PR #76 | Expanding parameter-table coverage |
-| Documentation | Anything requiring hardware that will never exist here (§5.3) |
+| Live verification of what already shipped | Single-mic (exclusive) mode |
+| Upstream PR #76 | Studio presets built on per-channel control (Phase 5 P3) |
+| Documentation | Expanding parameter-table coverage |
+| | Anything requiring hardware that will never exist here (§5.3) |
 
 This is not a pause — it is an acceptance. **Do not open feature work in the right-hand column
 without asking first**, and treat "we could also control X per channel" as answered: we could, and
 we are choosing not to.
 
-The one exception worth raising: a **shipped default that is actively unsafe here** is a
-correctness issue, not a feature. There is exactly one — see the `micExclusiveMode` warning in
-[§9 Phase 5](#phase-5--broadcast-feature-layer--p1-done-p2-code-complete-but-unverified-p3-paused).
+Deferred ideas — including **single-mic (exclusive) mode**, taken out of scope on 2026-08-28 — are
+parked in [§9 Backlog](#backlog--nice-to-have-not-scheduled) with the reasoning attached, so
+reviving one starts from what we already learned rather than from scratch. That backlog also
+carries the one **unsafe shipped default** we know about; it is dormant while the feature stays
+off, and the note travels with the feature so it can't be picked up without being seen.
 
 ---
 
@@ -1148,7 +1151,7 @@ anything.
   one: if the write path ever needs proving, it has to happen on someone else's hardware, most
   realistically through upstream PR #76. See [§5.3](#53-the-dante-remote-ha-caveat).
 
-### Phase 5 — Broadcast feature layer — **P1 done, P2 code-complete but unverified, P3 CLOSED**
+### Phase 5 — Broadcast feature layer — **P1 done, P2 shipped-but-parked, P3 closed**
 
 Chosen priorities, in build order:
 
@@ -1204,8 +1207,9 @@ the Shure/Sennheiser devices and their own Companion modules, not on the DM3.
 >   behaviour.
 > ### ⚠️ `micExclusiveMode`'s shipped default would break a live show here
 >
-> This is the more serious half of the correction, learned from the operator's CH1–4 explanation
-> (§2.2 rule 3) on 2026-08-28.
+> Learned from the operator's CH1–4 explanation (§2.2 rule 3) on 2026-08-28. **The feature itself
+> went out of scope the same day** — it now lives in [§9 Backlog](#backlog--nice-to-have-not-scheduled).
+> This note stays here because the code is shipped and someone could still tick the box.
 >
 > `micChannels` ships defaulting to `1,2,3,4,5,6,15,16`, and `micExclusiveMode` turns off **every
 > other listed channel** the instant one turns on. In this studio that is actively wrong:
@@ -1282,6 +1286,37 @@ the §1.1 scope freeze before it was ever started.
 Build as a Companion dev module, install on the studio machine, write studio-facing docs. Then offer
 upstream: the API 2.1 migration, C0, C6 and the §7 performance work all benefit every user of the
 module. The broadcast layer may or may not fit upstream's scope — decide later.
+
+### Backlog — nice to have, not scheduled
+
+Out of scope under the §1.1 freeze. Recorded so the reasoning isn't lost, **not** as a to-do list.
+Nothing here should be started without the operator raising it first.
+
+| Item | State | If it is ever revived |
+|---|---|---|
+| **Single-mic (exclusive) mode** | Shipped in v3.12.0, **off by default, out of scope 2026-08-28** | ⚠️ Read the hazard note below *before* enabling it. |
+| **Monitor auto-dim** | Shipped in v3.12.0, off by default | Premise doesn't hold here — there is no monitor bus (§2.4). Only meaningful if one is ever configured. |
+| **Reinforcement-bus feedback mitigation** | Never built | The successor idea to monitor auto-dim, acting on Mix 3/4/5/6. Read §2.4 first: pulling a lift send is *audible to the room*, so it must be operator-driven and visible, never a silent background behaviour. |
+| **Mix-minus / IFB helper** | Never built | Mix 1 ↔ CH10/11 is already a correct mix-minus by hand (§2.2 rule 1). A helper would have to preserve that, not rediscover it. |
+| **Studio presets** (was Phase 5 P3) | Closed unbuilt | Was to be built on the two features above; inherits their status. |
+
+> #### ⚠️ Single-mic mode carries an unsafe default — read before enabling
+>
+> `micExclusiveMode` ships with `micChannels` defaulting to `1,2,3,4,5,6,15,16`, and turns off every
+> *other* listed channel the instant one opens. In this studio that would:
+>
+> - **kill CH1 the moment CH3 opened** — the stream feed drops mid-sentence while the speaker is
+>   being lifted into the room (§2.2 rule 3);
+> - **fight the existing Companion sequencing button** that drives CH1/CH2.
+>
+> **The only genuine exclusivity in this patch is CH3 ↔ CH4** (§2.2 rule 4).
+>
+> So whenever this is revived, **step one is narrowing `micChannels` to `3,4` — or emptying the
+> default outright.** That makes it an *interlock* rather than mic exclusivity, and it should
+> probably be renamed to say so. The one-line default change was offered and deliberately left
+> undone when the feature went out of scope; it stays undone until the feature comes back.
+>
+> Until then: **leave `micExclusiveMode` off.** It is off by default, so no action is required today.
 
 ---
 
@@ -1451,8 +1486,9 @@ Community support for the module is at `discourse.checkcheckonetwo.com`, run by 
    automation driving the stream mics (§2.2 rule 3). Anything this module does around channel-on
    state can collide with it — most obviously `micExclusiveMode`. Worth reading that button's
    action list before enabling anything that writes `InCh/Fader/On`.
-10. **Should `micChannels` default to empty?** Its shipped default would make `micExclusiveMode`
-    actively dangerous here (§9 Phase 5). One-line change, flagged not done under the §1.1 freeze.
+10. ~~**Should `micChannels` default to empty?**~~ **Settled 2026-08-28** — single-mic mode went
+    out of scope, so the change stays undone and the hazard note travels with the feature in the
+    §9 backlog. Revisit only if the feature is revived.
 
 **Assumptions a successor should challenge:**
 
