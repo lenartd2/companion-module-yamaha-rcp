@@ -1,4 +1,4 @@
-## Yamaha Remote Control Protocol - v3.5.13
+## Yamaha Remote Control Protocol - v3.5.14
 
 Please visit https://discourse.checkcheckonetwo.com for help, discussions, suggestions, etc.
 
@@ -22,11 +22,44 @@ Note that this module only works to connected hardware. It does not work with th
 
 > Don't forget that you can create a macro by pressing a SD button (while recording) that already has actions on it while a console is connected.The new Macro will have those commands in it as well as any you added before you pressed the button or after!
 
+**SCENE STORE**
+
+> Storing a scene overwrites it on the console with the current state - there is no confirmation
+> and no undo. Any Scene Store action is now ignored (and logged as a warning) unless
+> **Allow Scene Store?** is checked in the connection's config. It defaults to off - turn it on
+> deliberately if you actually need a Scene Store button.
+
 **VARIABLES**
 
 > Select "Auto-Create Variable" to create a variable in the form **CommandName_Ch#** or **CommandName_Ch#\_Mix#**
 
-> Use **@(internal:custom_MyCustomVar)** in the value field to update a custom variable within a feedback. Custom variable must already exist
+> Use **@(custom:MyCustomVar)** in the value field to update a custom variable from an **action**. Custom variable must already exist.
+>
+> Companion's module API no longer allows a *feedback* to write a custom variable this way (only actions can, and it's deprecated even there). If you were relying on `@(custom:...)` inside a feedback's Val option, that write no longer happens — use "Auto-Create Variable" and the module's own variable instead.
+
+**METERING (DM3)**
+
+> DM3 metering is now driven from the console's own real meter addresses instead of a hand-built
+> table, fixing several long-standing bugs (stereo meters only showing the left channel, some
+> meter types showing nothing at all, FX return meters always showing channel 1). If you built
+> meter feedbacks/presets on an older version, they'll still work - the underlying data changed,
+> not the action/feedback names.
+
+**DANTE REMOTE HEAD-AMP CONTROL (DM3)**
+
+> Remote head-amp gain and 48V phantom power for a Dante-connected Rio-class stagebox (16
+> channels) are now available as actions/feedbacks. **`HAAvailability`** tells you whether a
+> remote head-amp is actually patched right now - it reads `0` (and gain/phantom reads and writes
+> get refused by the console) until one is. This is normal on a system with no Rio-class device on
+> the Dante network, not a fault - check `HAAvailability` before building a button around gain/48V.
+
+**AUTO-POPULATED CHANNEL VARIABLES**
+
+> Every fader-level channel (input channels, stereo inputs, FX returns, mixes, matrices, ST,
+> monitor) now gets a name/level/on-state variable automatically on connect - you no longer need
+> to place an "Auto-Create Variable" feedback on a button first just to get a channel's name or
+> level as a variable. These use the same naming as a manually auto-created variable (e.g.
+> `V_InCh_Fader_Level_1`), so anything already relying on that naming keeps working unchanged.
 
 **DYNAMIC CHANNEL PARAMETERS**
 

@@ -1,3 +1,5 @@
+const paramFuncs = require('./paramFuncs')
+
 module.exports = {
 	initVars: (instance) => {
 		instance.variables = [
@@ -5,11 +7,11 @@ module.exports = {
 			{ variableId: 'deviceName', name: 'Device Label' },
 			{ variableId: 'runMode', name: 'Device Run Mode' },
 		]
-		if (!['TF', 'DM3', 'DM7'].includes(config.model)) {
-			instance.variables.push({ variableId: 'error', name: 'Device Status'})
+		if (!['TF', 'DM3', 'DM7'].includes(instance.config.model)) {
+			instance.variables.push({ variableId: 'error', name: 'Device Status' })
 		}
 
-		if (config.model.slice(-2) != 'IO') {
+		if (instance.config.model.slice(-2) != 'IO') {
 			// Not TIO, RIO or RSio
 			instance.variables.push(
 				{ variableId: 'curScene', name: 'Current Scene Number' },
@@ -17,7 +19,7 @@ module.exports = {
 				{ variableId: 'curSceneComment', name: 'Current Scene Comment' },
 			)
 
-			switch (config.model) {
+			switch (instance.config.model) {
 				case 'CL/QL':
 					{
 						instance.variables.push(
@@ -25,7 +27,7 @@ module.exports = {
 							{ variableId: 'cuedStInChannels', name: 'Stereo Inputs Cued' },
 							{ variableId: 'cuedMixes', name: 'Mixes Cued' },
 							{ variableId: 'cuedMatrices', name: 'Matrices Cued' },
-							{ variableId: 'cuedDCAs', name: 'DCAs Cued' }
+							{ variableId: 'cuedDCAs', name: 'DCAs Cued' },
 						)
 					}
 					break
@@ -36,7 +38,7 @@ module.exports = {
 							{ variableId: 'cuedStInChannels', name: 'Stereo Inputs Cued' },
 							{ variableId: 'cuedInChannels', name: 'Inputs Cued' },
 							{ variableId: 'cuedMixes', name: 'Mixes Cued' },
-							{ variableId: 'cuedMatrices', name: 'Matrices Cued' }
+							{ variableId: 'cuedMatrices', name: 'Matrices Cued' },
 						)
 					}
 					break
@@ -46,13 +48,13 @@ module.exports = {
 						{ variableId: 'cuedInChannels', name: 'Inputs Cued' },
 						{ variableId: 'cuedMixes', name: 'Mixes Cued' },
 						{ variableId: 'cuedMatrices', name: 'Matrices Cued' },
-						{ variableId: 'cuedDCAs', name: 'DCAs Cued' }
+						{ variableId: 'cuedDCAs', name: 'DCAs Cued' },
 					)
 				}
 			}
 		}
 
-		instance.setVariableDefinitions(instance.variables)
+		paramFuncs.setVariableDefinitions(instance)
 		instance.setVariableValues({
 			cuedStInChannels: '[]',
 			cuedInChannels: '[]',
@@ -65,11 +67,11 @@ module.exports = {
 	// Get info from a connected console
 	getVars: (instance) => {
 		instance.sendCmd('devinfo productname') // Request Device Model
-		instance.sendCmd('devinfo devicename')  // Request Device Label
-		instance.sendCmd('devstatus runmode')   // Request Run Mode
-		if (!['TF', 'DM3', 'DM7'].includes(config.model)) instance.sendCmd('devstatus error') // Request error status
-		
-		switch (config.model) {
+		instance.sendCmd('devinfo devicename') // Request Device Label
+		instance.sendCmd('devstatus runmode') // Request Run Mode
+		if (!['TF', 'DM3', 'DM7'].includes(instance.config.model)) instance.sendCmd('devstatus error') // Request error status
+
+		switch (instance.config.model) {
 			case 'CL/QL': {
 				instance.sendCmd('sscurrent_ex MIXER:Lib/Scene') // Request Current Scene Number
 				break
@@ -93,6 +95,39 @@ module.exports = {
 		}
 	},
 
+	// Auto-populate a variable for every strip's name/level/on-state, for every fader-level channel
+	// on the console, without needing a feedback with "Auto-Create Variable" manually placed on a
+	// button first (Phase 5 P1, PLAN.md §9). Reuses createAction/createPresets' own
+	// isFaderLevel+RW('w') channel enumeration for consistency with what already gets fader-control
+	// UI. Builds instance._channelVariableAddresses, a plain address set index.js's addToDataStore
+	// consults on every value change so these variables keep updating live for free - the same
+	// mechanism a real Auto-Create Variable feedback uses (fbCreatesVar), just triggered without
+	// requiring any button to exist.
+	requestChannelVariables: (instance) => {
+		instance._channelVariableAddresses = new Set()
+		const faderCmds = instance.rcpCommands.filter((c) => paramFuncs.isFaderLevel(c) && c.RW.includes('w'))
+		for (const levelCmd of faderCmds) {
+			const nameCmd = instance.rcpCommands.find(
+				(cmd) => cmd.Address == levelCmd.Address.replace('/Fader/Level', '/Label/Name') && cmd.RW.includes('r'),
+			)
+			const onCmd = instance.rcpCommands.find(
+				(cmd) => cmd.Address == levelCmd.Address.replace('/Fader/Level', '/Fader/On') && cmd.RW.includes('r'),
+			)
+			const xCount = Math.max(parseInt(levelCmd.X) || 1, 1)
+			// Only ever request Y=0 here, even for a row whose table declares Y>1 (Fx says 2, e.g.) -
+			// confirmed live that Fx's Y=1 is InvalidArgument despite the table's own claim, so its
+			// real Y semantics aren't what X/Y addressing normally means elsewhere. Y=0 is always
+			// valid; anything a row might have beyond that is out of scope for this feature.
+			for (const cmd of [levelCmd, nameCmd, onCmd]) {
+				if (cmd === undefined) continue
+				instance._channelVariableAddresses.add(cmd.Address)
+				for (let x = 1; x <= xCount; x++) {
+					instance.addToCmdQueue({ Address: cmd.Address, X: x - 1, Y: 0, prefix: 'get' })
+				}
+			}
+		}
+	},
+
 	setVar: (instance, msg) => {
 		switch (msg.Action) {
 			case 'devinfo': {
@@ -106,7 +141,7 @@ module.exports = {
 					case 'devicename':
 						instance.setVariableValues({ deviceName: msg.Val })
 						break
-					}
+				}
 				break
 			}
 			case 'devstatus': {
@@ -124,7 +159,7 @@ module.exports = {
 				break
 			case 'sscurrent_ex':
 				// Request Current Scene Info once we know what scene we have
-				if (config.model == 'TF' || config.model == 'DM3') {
+				if (instance.config.model == 'TF' || instance.config.model == 'DM3') {
 					instance.setVariableValues({
 						curScene: `${msg.Address.toUpperCase().slice(-1)}${msg.Val.toString().padStart(2, '0')}`,
 					})
@@ -137,7 +172,7 @@ module.exports = {
 			case 'sscurrentt_ex':
 				instance.setVariableValues({ curScene: msg.Val })
 				// Request Current Scene Info once we know what scene we have
-				switch (config.model) {
+				switch (instance.config.model) {
 					case 'PM':
 						instance.sendCmd(`ssinfot_ex MIXER:Lib/Scene "${msg.Val}"`)
 						break
@@ -152,8 +187,12 @@ module.exports = {
 				instance.setVariableValues({ curSceneComment: msg.ScnComment })
 				break
 			default: {
+				// A malformed/truncated line (e.g. one split mid-line across two TCP chunks - see the
+				// receive handler in index.js) could reach here with no Address at all. Every case
+				// below expects one; bail rather than crash the connection over a single bad line.
+				if (msg.Address === undefined) return
 				let cmdName = msg.Address.slice(msg.Address.indexOf('/') + 1) // String after "MIXER:Current/"
-				let varName = ''
+				let varName
 
 				switch (cmdName) {
 					case 'Cue/InCh/On':
@@ -194,13 +233,13 @@ module.exports = {
 		}
 	},
 
-	fbCreatesVar: (instance, cmd, data) => {
+	fbCreatesVar: (instance, cmd, data, context) => {
 		const wtMtrTable = require('./wtMtrTable.json')
 		const paramFuncs = require('./paramFuncs.js')
-		let rcpCmd = paramFuncs.findRcpCmd(cmd.Address)
+		let rcpCmd = paramFuncs.findRcpCmd(instance, cmd.Address)
 
 		if (rcpCmd.Type == 'mtr') {
-			if (config.model == 'DM7') {
+			if (instance.config.model == 'DM7') {
 				data = Math.round(wtMtrTable[data])
 			} else {
 				data = data - 126
@@ -217,29 +256,37 @@ module.exports = {
 		if (cmd.createVariable) {
 			// Auto-create a variable
 
-			let cmdName = rcpCmd.Address.slice(rcpCmd.Address.indexOf('/') + 1).replace(/\//g, '_')
-			let varName = `V_${cmdName}`
-			varName = varName + (cmd.X ? `_${cmd.X}` : '')
-			varName = varName + (cmd.Y ? `_${cmd.Y}` : '')
+			let varName = paramFuncs.getAutoVariableName(rcpCmd, cmd.X, cmd.Y)
 
 			let varToAdd = { variableId: varName, name: 'Auto-Created Variable' }
 			let varIndex = instance.variables.findIndex((i) => i.variableId === varToAdd.variableId)
 
-			// Add new Auto-created variable and value
+			// Add new Auto-created variable and value. §7.6: a metering frame (or a scene recall) can
+			// discover many of these in one burst - each used to trigger its own full
+			// setVariableDefinitions() rebuild and its own setVariableValues() call (this is what
+			// upstream #64, "plugin restarts when a lot of data comes in", was hitting on a QL5 full
+			// of auto-created DCA level variables). Both are now coalesced into at most one call each
+			// per tick via the instance's queueNewVariable()/queueVariableValue().
 			if (varIndex == -1) {
-				instance.variables.push(varToAdd)
-				instance.setVariableDefinitions(instance.variables)
+				instance.queueNewVariable(varToAdd)
 			}
-			let value = {}
-			value[varName] = data
-			instance.setVariableValues(value)
+			instance.queueVariableValue(varName, data)
 		} else {
-
 			const reg = /^@\(custom:([^)$]+)\)/
 			let hasCustomVar = reg.exec(cmd.Val)
 			if (hasCustomVar) {
-				// Set a custom variable value using @ syntax
-				instance.setCustomVariableValue(hasCustomVar[1], data)
+				// Set a custom variable value using @ syntax.
+				// Companion's module API only exposes this write from an action's context, not a
+				// feedback's, as of API 2.0 - there is no replacement for the feedback case.
+				if (context && typeof context.setCustomVariableValue === 'function') {
+					context.setCustomVariableValue(hasCustomVar[1], data)
+				} else if (!instance._loggedCustomVarFeedbackWarning) {
+					instance._loggedCustomVarFeedbackWarning = true
+					instance.log(
+						'warn',
+						'A feedback uses "@(custom:...)" in its Val option to write a custom variable. Companion no longer allows feedbacks to write custom variables (only actions can); this value will not be written.',
+					)
+				}
 			}
 		}
 	},

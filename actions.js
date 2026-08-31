@@ -1,11 +1,22 @@
 module.exports = {
+	// Parses an X/Y option that may be a single value or a "[1,2,3]" JSON array (to fire an action
+	// on multiple channels at once). Falls back to treating unparseable input as a single literal
+	// value rather than throwing - see C3.
+	parseMultiValue: (rawValue) => {
+		try {
+			const parsed = JSON.parse(String(rawValue))
+			return Array.isArray(parsed) ? parsed : [parsed]
+		} catch {
+			return [rawValue]
+		}
+	},
+
 	// Create single Action/Feedback
 	createAction: (instance, rcpCmd) => {
 		const rcpNames = require('./rcpNames.json')
 		const rsioChoices = require('./rsioChoices.json')
 		const paramFuncs = require('./paramFuncs.js')
 
-		let newAction = {}
 		let paramsToAdd = []
 		let actionName = rcpCmd.Address.slice(rcpCmd.Address.indexOf('/') + 1) // String after "MIXER:Current/"
 
@@ -13,7 +24,7 @@ module.exports = {
 		let actionNameParts = actionName.split('/')
 		let rcpNameIdx = actionName.startsWith('Cue') || actionName.startsWith('Meter') ? 1 : 0
 
-		newAction = { name: actionName, options: [] }
+		let newAction = { name: actionName, options: [] }
 
 		// X parameter - always an integer
 		if (rcpCmd.X > 1) {
@@ -22,8 +33,7 @@ module.exports = {
 				label: actionNameParts[rcpNameIdx],
 				id: 'X',
 				default: 1,
-				required: true,
-				useVariables: { local: true }
+				useVariables: true,
 			}
 			if (rsioChoices[actionName] !== undefined) {
 				XOpts = {
@@ -58,11 +68,14 @@ module.exports = {
 				label: actionNameParts[rcpNameIdx],
 				id: 'Y',
 				default: 1,
-				required: true,
-				useVariables: { local: true },
+				useVariables: true,
 				allowCustom: true,
 			}
-			if ((config.model == 'TF' || config.model == 'DM3' || config.model == 'DM7') && rcpCmd.Index >= 1000 && rcpCmd.Index < 2000) {
+			if (
+				(instance.config.model == 'TF' || instance.config.model == 'DM3' || instance.config.model == 'DM7') &&
+				rcpCmd.Index >= 1000 &&
+				rcpCmd.Index < 2000
+			) {
 				YOpts = {
 					...YOpts,
 					type: 'dropdown',
@@ -87,7 +100,7 @@ module.exports = {
 				if (pickoffs) {
 					YOpts.label = 'Pickoff'
 					YOpts.choices = []
-					for (i = 0; i < pickoffs.length; i++) {
+					for (let i = 0; i < pickoffs.length; i++) {
 						YOpts.choices.push({ id: i + 1, label: pickoffs[i] })
 					}
 					YOpts.default = 1
@@ -105,10 +118,9 @@ module.exports = {
 			label: actionNameParts[rcpNameIdx],
 			id: 'Val',
 			default: rcpCmd.Default,
-			required: true,
 			minChoicesForSearch: 0,
 			allowCustom: true,
-			useVariables: { local: true }
+			useVariables: true,
 		}
 		switch (rcpCmd.Type) {
 			case 'bool':
@@ -129,6 +141,7 @@ module.exports = {
 
 			case 'mtr':
 				ValOpts.label = 'Level'
+			// falls through - mtr shares the integer/freq textinput logic below
 
 			case 'integer':
 			case 'freq':
@@ -143,7 +156,7 @@ module.exports = {
 							type: 'textinput',
 							default: rcpCmd.Default == -32768 ? '-Inf' : rcpCmd.Default / rcpCmd.Scale,
 						}
-		
+
 						paramsToAdd.push(ValOpts)
 
 						if (rcpCmd.RW.includes('r')) {
@@ -161,12 +174,15 @@ module.exports = {
 			case 'string':
 			case 'binary':
 				if (actionName.startsWith('CustomFaderBank')) ValOpts.choices = rcpNames.customChNames
-				else if (actionName.endsWith('Color')) ValOpts.choices = config.model == 'TF' ? rcpNames.chColorsTF : rcpNames.chColors
+				else if (actionName.endsWith('Color'))
+					ValOpts.choices = instance.config.model == 'TF' ? rcpNames.chColorsTF : rcpNames.chColors
 				else if (actionName.endsWith('Icon')) ValOpts.choices = rcpNames.chIcons
-				
 				else if (rcpNames[actionName] !== undefined) ValOpts.choices = rcpNames[actionName]
-
-				else if ((config.model == 'PM' || config.model == 'DM7') && rcpCmd.Index >= 1000 && rcpCmd.Index < 1010) {
+				else if (
+					(instance.config.model == 'PM' || instance.config.model == 'DM7') &&
+					rcpCmd.Index >= 1000 &&
+					rcpCmd.Index < 1010
+				) {
 					ValOpts = { ...ValOpts, type: 'textinput', regex: '/^([1-9][0-9]{0,2})\\.[0-9][0-9]$/' }
 				} else {
 					ValOpts = { ...ValOpts, type: 'textinput', regex: '' }
@@ -177,6 +193,7 @@ module.exports = {
 		// Make sure the current value is stored in dataStore[]
 
 		if (rcpCmd.Index < 1000 && rcpCmd.RW.includes('r')) {
+			newAction.optionsToMonitorForSubscribe = ['X', 'Y']
 			newAction.subscribe = async (action, context) => {
 				let options = await paramFuncs.parseOptions(context, action.options)
 				if (options != undefined) {
@@ -198,12 +215,10 @@ module.exports = {
 
 		let commands = {}
 		let feedbacks = {}
-		let rcpCommand = {}
-		let actionName = ''
 
-		for (let i = 0; i < rcpCommands.length; i++) {
-			rcpCommand = rcpCommands[i]
-			actionName = rcpCommand.Address.replace(/:/g, '_') // Change the : to _ as companion doesn't like colons in names
+		for (let i = 0; i < instance.rcpCommands.length; i++) {
+			let rcpCommand = instance.rcpCommands[i]
+			let actionName = rcpCommand.Address.replace(/:/g, '_') // Change the : to _ as companion doesn't like colons in names
 			let newAction = module.exports.createAction(instance, rcpCommand)
 
 			if (rcpCommand.RW.includes('r')) {
@@ -212,15 +227,26 @@ module.exports = {
 
 			if (rcpCommand.RW.includes('w')) {
 				newAction.callback = async (action, context) => {
-					let foundCmd = paramFuncs.findRcpCmd(action.actionId) // Find which command
-					let XArr = JSON.parse(await context.parseVariablesInString(action.options.X || 0))
-					if (!Array.isArray(XArr)) {
-						XArr = [XArr]
+					let foundCmd = paramFuncs.findRcpCmd(instance, action.actionId) // Find which command
+
+					// C8: Scene Store overwrites a scene on the console with no confirmation and no
+					// undo. Companion has no native "confirm before running" for actions, so gate it
+					// behind a config toggle that defaults off instead - an accidental press does
+					// nothing (loudly, in the log) unless the user has deliberately opted in.
+					if (paramFuncs.isSceneStore(foundCmd) && !instance.config.allowSceneStore) {
+						instance.log(
+							'warn',
+							`Scene Store action ignored: enable "Allow Scene Store?" in the connection config first. This overwrites a scene on the console with no confirmation and no undo.`,
+						)
+						return
 					}
-					let YArr = JSON.parse(await context.parseVariablesInString(action.options.Y || 0))
-					if (!Array.isArray(YArr)) {
-						YArr = [YArr]
-					}
+
+					// X/Y support a "[1,2,3]" array syntax to fire the action on multiple channels.
+					// A bare JSON.parse() here throws on any other typed-in text (C3) and silently
+					// kills the whole action with no feedback to the user; fall back to treating the
+					// raw value as a single literal instead of failing outright.
+					let XArr = module.exports.parseMultiValue(action.options.X || 0)
+					let YArr = module.exports.parseMultiValue(action.options.Y || 0)
 
 					for (let X of XArr) {
 						let opt = action.options
@@ -247,6 +273,7 @@ module.exports = {
 			type: 'advanced',
 			name: 'VUMeter',
 			description: 'Show a Bargraph VU Meter on the button',
+			affectedProperties: ['imageBuffer'],
 			options: [
 				{
 					type: 'dropdown',
@@ -268,7 +295,6 @@ module.exports = {
 					min: 0,
 					max: 72,
 					default: 1,
-					required: true,
 				},
 				{
 					type: 'textinput',
@@ -285,7 +311,7 @@ module.exports = {
 					useVariables: true,
 				},
 			],
-			callback: async (feedback, context) => {
+			callback: async (feedback) => {
 				let position = feedback.options.position
 				let padding = feedback.options.padding
 				let ofsX1 = 0
@@ -350,7 +376,7 @@ module.exports = {
 					barLength: bLength,
 					barWidth: bWidth,
 					type: position == 'left' || position == 'right' ? 'vertical' : 'horizontal',
-					value: bVal(1 * (await context.parseVariablesInString(feedback.options.meterVal1))),
+					value: bVal(1 * feedback.options.meterVal1),
 					offsetX: ofsX1,
 					offsetY: ofsY1,
 					opacity: 255,
@@ -367,7 +393,7 @@ module.exports = {
 				if (feedback.options.meterVal2) {
 					options2 = {
 						...options1,
-						value: bVal(1 * (await context.parseVariablesInString(feedback.options.meterVal2))),
+						value: bVal(1 * feedback.options.meterVal2),
 						offsetX: ofsX2,
 						offsetY: ofsY2,
 					}
@@ -385,7 +411,13 @@ module.exports = {
 					bars.push(options2.value == 100 ? graphics.bar(peak2) : graphics.bar(options2))
 				}
 
-				return { imageBuffer: graphics.stackImage(bars) }
+				return {
+					imageBuffer: graphics.stackImage(bars).toString('base64'),
+					// companion-module-utils writes each pixel via writeUint32BE(alpha*2^24 + rgb, ...),
+					// which puts alpha in the first byte - that's ARGB, not RGBA.
+					imageBufferEncoding: { pixelFormat: 'ARGB' },
+					imageBufferPosition: { x: 0, y: 0, width: feedback.image.width, height: feedback.image.height },
+				}
 			},
 		}
 

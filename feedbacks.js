@@ -8,25 +8,28 @@ module.exports = {
 
 		if (instance.colorCommands.includes(action.name)) {
 			newFeedback.type = 'advanced' // Old feedback style
+			newFeedback.affectedProperties = ['color', 'bgcolor']
 			newFeedback.options.pop()
 		} else {
 			newFeedback.type = 'boolean' // New feedback style
 
 			if (newFeedback.options.length > 0) {
-				let lastOptions = newFeedback.options[newFeedback.options.length - 1]
-				if (lastOptions.label == 'State') {
-					lastOptions.choices.pop() // Get rid of the Toggle setting for Feedbacks
-					lastOptions.default = 1 // Don't select Toggle if there's no Toggle!
+				let stateOption = newFeedback.options.find((option) => option.label == 'State')
+				if (stateOption) {
+					stateOption.choices.pop() // Get rid of the Toggle setting for Feedbacks
+					stateOption.default = 1 // Don't select Toggle if there's no Toggle!
 				}
-				if (lastOptions.label == 'Relative') {
-					newFeedback.options.pop() // Get rid of Relative checkbox for feedback
-				}
+				newFeedback.options = newFeedback.options.filter((option) => option.label != 'Relative')
 			}
 			newFeedback.options.push({
 				type: 'checkbox',
 				label: 'Auto-Create Variable',
 				id: 'createVariable',
+				tooltip:
+					'Creates a Companion variable from this feedback value so it can be shown on buttons or used by other controls.',
 				default: false,
+				// Referenced by the Val option's isVisibleExpression below.
+				disableAutoExpression: true,
 			})
 		}
 
@@ -37,12 +40,12 @@ module.exports = {
 
 		let valOptionIdx = newFeedback.options.findIndex((opt) => opt.id == 'Val')
 		if (valOptionIdx > -1) {
-			newFeedback.options[valOptionIdx].isVisible = (options) => !options.createVariable
+			newFeedback.options[valOptionIdx].isVisibleExpression = '!$(options:createVariable)'
 		}
 
 		newFeedback.callback = async (feedback, context) => {
 			const varFuncs = require('./variables.js')
-			let rcpCmd = paramFuncs.findRcpCmd(feedback.feedbackId)
+			let rcpCmd = paramFuncs.findRcpCmd(instance, feedback.feedbackId)
 			if (rcpCmd === undefined) return
 
 			let options = await paramFuncs.parseOptions(context, feedback.options)
@@ -50,14 +53,18 @@ module.exports = {
 
 			let fb = options
 			fb.Address = rcpCmd.Address
-			fb.Val = await paramFuncs.parseVal(context, fb)
+			// parseVal() needs the real instance (config/rcpCommands/getFromDataStore), not the
+			// feedback callback context - passing context here was a latent bug (C1 cleanup surfaced
+			// it) that happened to be harmless only because parseVal's relative-value branch, the one
+			// place it needed something callable on this argument, is never reached for feedbacks.
+			fb.Val = await paramFuncs.parseVal(instance, fb)
 
 			let data = instance.getFromDataStore(fb)
 			if (data == undefined) return
 
 			fb.X = feedback.options.X
 			fb.Y = feedback.options.Y
-			varFuncs.fbCreatesVar(instance, fb, data) // Are we creating and/or updating a variable?
+			varFuncs.fbCreatesVar(instance, fb, data, context) // Are we creating and/or updating a variable?
 
 			//	if (options && data == options.Val) {
 			if (fb.Val == data) {

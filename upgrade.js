@@ -2,140 +2,73 @@
 // Do the upgrades of actions, release actions and feedback
 */
 
-module.exports = [
-	(upg111to112 = () => ({
+const upg111to112 = () => ({
+	updatedConfig: null,
+	updatedActions: [],
+	updatedFeedbacks: [],
+})
+
+const upg112to113 = () => ({
+	updatedConfig: null,
+	updatedActions: [],
+	updatedFeedbacks: [],
+})
+
+const upg113to160 = () => ({
+	updatedConfig: null,
+	updatedActions: [],
+	updatedFeedbacks: [],
+})
+
+// Upgrade  2.x > 3.0.x, changes scene action parameter format
+const upg2xxto30x = (context, props) => {
+	var paramFuncs = require('./paramFuncs')
+
+	console.log('\nYamaha-RCP Upgrade: Running 2.x -> 3.x Upgrade.')
+	var updates = {
 		updatedConfig: null,
 		updatedActions: [],
 		updatedFeedbacks: [],
-	})),
+	}
 
-	(upg112to113 = () => ({
-		updatedConfig: null,
-		updatedActions: [],
-		updatedFeedbacks: [],
-	})),
-
-	(upg113to160 = () => ({
-		updatedConfig: null,
-		updatedActions: [],
-		updatedFeedbacks: [],
-	})),
-
-	// Upgrade  2.x > 3.0.x, changes scene action parameter format
-	(upg2xxto30x = (context, props) => {
-		var paramFuncs = require('./paramFuncs')
-
-		console.log('\nYamaha-RCP Upgrade: Running 2.x -> 3.x Upgrade.')
-		var updates = {
-			updatedConfig: null,
-			updatedActions: [],
-			updatedFeedbacks: [],
-		}
-
-		if (context.currentConfig == null) {
-			console.log('\nYamaha-RCP Upgrade: NO CONFIG FOUND!\n')
-			return updates
-		}
-
-		console.log('Yamaha-RCP Upgrade: Config Ok, Getting Parameters...')
-		rcpCommands = paramFuncs.getParams(context, context.currentConfig)
-		console.log('\n')
-
-		let checkUpgrade = (action, isAction) => {
-			console.log('Yamaha-RCP Upgrade: Checking action/feedback: ', action)
-
-			let changed = false
-			let rcpCmd = undefined
-			let newAction = JSON.parse(JSON.stringify(action))
-			let actionAddress = isAction ? action.actionId : action.feedbackId
-
-			if (actionAddress.startsWith('MIXER_Lib')) {
-				actionAddress = 'MIXER_Lib/Scene/Recall'
-				newAction.options.Val = action.options.X
-				newAction.options.X = 0
-				changed = true
-			}
-
-			if (actionAddress.startsWith('scene')) {
-				actionAddress = 'MIXER_Lib/Bank/Scene/Recall'
-				newAction.options.Val = action.options.X
-				newAction.options.X = 0
-				newAction.options.Y = action.options.Y == 'a' ? 1 : 2
-			}
-
-			rcpCmd = paramFuncs.findRcpCmd(actionAddress)
-			if (rcpCmd !== undefined) {
-				if ((rcpCmd.Type == 'integer' || rcpCmd.Type == 'binary') && newAction.options.Val !== 'Toggle') {
-					newAction.options.Val = newAction.options.Val == -32768 ? '-Inf' : newAction.options.Val / rcpCmd.Scale
-					changed = true
-				}
-
-				if (changed) {
-					console.log(
-						`Yamaha-RCP Upgrade: Updating ${
-							isAction
-								? "Action '" + newAction.actionId + "' -> '" + actionAddress
-								: "Feedback '" + newAction.feedbackId + "' -> '" + actionAddress
-						}' ...`
-					)
-					console.log(
-						`X: ${action.options.X} -> ${newAction.options.X}, Y: ${action.options.Y} -> ${newAction.options.Y}, Val: ${action.options.Val} -> ${newAction.options.Val}\n`
-					)
-
-					if (isAction) {
-						newAction.actionId = actionAddress
-						updates.updatedActions.push(newAction)
-					} else {
-						newAction.feedbackId = actionAddress
-						updates.updatedFeedbacks.push(newAction)
-					}
-				}
-
-				return
-			}
-
-			console.log(`Yamaha-RCP Upgrade: Action ${actionAddress} not found in list!`)
-		}
-
-		for (let k in props.actions) {
-			checkUpgrade(props.actions[k], true)
-		}
-
-		for (let k in props.feedbacks) {
-			checkUpgrade(props.feedbacks[k], false)
-		}
-
+	if (context.currentConfig == null) {
+		console.log('\nYamaha-RCP Upgrade: NO CONFIG FOUND!\n')
 		return updates
-	}),
+	}
 
-	(upg30xto34x = (context, props) => {
-		console.log('\nYamaha-RCP Upgrade: Running 3.x -> 3.4 Upgrade.')
-		var updates = {
-			updatedConfig: props.config || {},
-			updatedActions: [],
-			updatedFeedbacks: [],
+	console.log('Yamaha-RCP Upgrade: Config Ok, Getting Parameters...')
+	// findRcpCmd() now reads instance.config/instance.rcpCommands instead of globals (C1) - there's
+	// no real module instance during an upgrade script, just this minimal context, so build the
+	// small stand-in object findRcpCmd actually needs.
+	const rcpCommands = paramFuncs.getParams(context, context.currentConfig)
+	const pseudoInstance = { config: context.currentConfig, rcpCommands }
+	console.log('\n')
+
+	let checkUpgrade = (action, isAction) => {
+		console.log('Yamaha-RCP Upgrade: Checking action/feedback: ', action)
+
+		let changed = false
+		let newAction = JSON.parse(JSON.stringify(action))
+		let actionAddress = isAction ? action.actionId : action.feedbackId
+
+		if (actionAddress.startsWith('MIXER_Lib')) {
+			actionAddress = 'MIXER_Lib/Scene/Recall'
+			newAction.options.Val = action.options.X
+			newAction.options.X = 0
+			changed = true
 		}
 
-		if (context.currentConfig == null) {
-			console.log('\nYamaha-RCP Upgrade: NO CONFIG FOUND!\n')
-			return updates
+		if (actionAddress.startsWith('scene')) {
+			actionAddress = 'MIXER_Lib/Bank/Scene/Recall'
+			newAction.options.Val = action.options.X
+			newAction.options.X = 0
+			newAction.options.Y = action.options.Y == 'a' ? 1 : 2
 		}
 
-		if (updates.updatedConfig !== undefined) { // set default value for new configs
-			if (updates.updatedConfig.meterSpeed == undefined) updates.updatedConfig.meterSpeed = 100 
-			if (updates.updatedConfig.kaIntervalL == undefined) updates.updatedConfig.kaIntervalL = 10
-			if (updates.updatedConfig.kaIntervalH == undefined) updates.updatedConfig.kaIntervalH = 10 
-		}
-
-		let checkUpgrade = (action, isAction) => {
-			console.log('Yamaha-RCP Upgrade: Checking action/feedback: ', action)
-
-			let changed = false
-			let newAction = JSON.parse(JSON.stringify(action))
-			let actionAddress = isAction ? action.actionId : action.feedbackId
-
-			if (actionAddress == 'Bar') {
-				actionAddress = 'Meter'
+		let rcpCmd = paramFuncs.findRcpCmd(pseudoInstance, actionAddress)
+		if (rcpCmd !== undefined) {
+			if ((rcpCmd.Type == 'integer' || rcpCmd.Type == 'binary') && newAction.options.Val !== 'Toggle') {
+				newAction.options.Val = newAction.options.Val == -32768 ? '-Inf' : newAction.options.Val / rcpCmd.Scale
 				changed = true
 			}
 
@@ -143,12 +76,12 @@ module.exports = [
 				console.log(
 					`Yamaha-RCP Upgrade: Updating ${
 						isAction
-							? "Action '" + action.actionId + "' -> '" + actionAddress
-							: "Feedback '" + action.feedbackId + "' -> '" + actionAddress
-					}' ...`
+							? "Action '" + newAction.actionId + "' -> '" + actionAddress
+							: "Feedback '" + newAction.feedbackId + "' -> '" + actionAddress
+					}' ...`,
 				)
 				console.log(
-					`X: ${action.options.X} -> ${newAction.options.X}, Y: ${action.options.Y} -> ${newAction.options.Y}, Val: ${action.options.Val} -> ${newAction.options.Val}\n`
+					`X: ${action.options.X} -> ${newAction.options.X}, Y: ${action.options.Y} -> ${newAction.options.Y}, Val: ${action.options.Val} -> ${newAction.options.Val}\n`,
 				)
 
 				if (isAction) {
@@ -163,15 +96,87 @@ module.exports = [
 			return
 		}
 
-		for (let k in props.actions) {
-			checkUpgrade(props.actions[k], true)
-		}
+		console.log(`Yamaha-RCP Upgrade: Action ${actionAddress} not found in list!`)
+	}
 
-		for (let k in props.feedbacks) {
-			checkUpgrade(props.feedbacks[k], false)
-		}
+	for (let k in props.actions) {
+		checkUpgrade(props.actions[k], true)
+	}
 
+	for (let k in props.feedbacks) {
+		checkUpgrade(props.feedbacks[k], false)
+	}
+
+	return updates
+}
+
+const upg30xto34x = (context, props) => {
+	console.log('\nYamaha-RCP Upgrade: Running 3.x -> 3.4 Upgrade.')
+	var updates = {
+		updatedConfig: props.config || {},
+		updatedActions: [],
+		updatedFeedbacks: [],
+	}
+
+	if (context.currentConfig == null) {
+		console.log('\nYamaha-RCP Upgrade: NO CONFIG FOUND!\n')
 		return updates
-	}),
+	}
 
-]
+	if (updates.updatedConfig !== undefined) {
+		// set default value for new configs
+		if (updates.updatedConfig.meterSpeed == undefined) {
+			updates.updatedConfig.meterSpeed = updates.updatedConfig.model == 'CL/QL' ? 80 : 100
+		}
+		if (updates.updatedConfig.kaIntervalL == undefined) updates.updatedConfig.kaIntervalL = 10
+		if (updates.updatedConfig.kaIntervalH == undefined) updates.updatedConfig.kaIntervalH = 10
+	}
+
+	let checkUpgrade = (action, isAction) => {
+		console.log('Yamaha-RCP Upgrade: Checking action/feedback: ', action)
+
+		let changed = false
+		let newAction = JSON.parse(JSON.stringify(action))
+		let actionAddress = isAction ? action.actionId : action.feedbackId
+
+		if (actionAddress == 'Bar') {
+			actionAddress = 'Meter'
+			changed = true
+		}
+
+		if (changed) {
+			console.log(
+				`Yamaha-RCP Upgrade: Updating ${
+					isAction
+						? "Action '" + action.actionId + "' -> '" + actionAddress
+						: "Feedback '" + action.feedbackId + "' -> '" + actionAddress
+				}' ...`,
+			)
+			console.log(
+				`X: ${action.options.X} -> ${newAction.options.X}, Y: ${action.options.Y} -> ${newAction.options.Y}, Val: ${action.options.Val} -> ${newAction.options.Val}\n`,
+			)
+
+			if (isAction) {
+				newAction.actionId = actionAddress
+				updates.updatedActions.push(newAction)
+			} else {
+				newAction.feedbackId = actionAddress
+				updates.updatedFeedbacks.push(newAction)
+			}
+		}
+
+		return
+	}
+
+	for (let k in props.actions) {
+		checkUpgrade(props.actions[k], true)
+	}
+
+	for (let k in props.feedbacks) {
+		checkUpgrade(props.feedbacks[k], false)
+	}
+
+	return updates
+}
+
+module.exports = [upg111to112, upg112to113, upg113to160, upg2xxto30x, upg30xto34x]

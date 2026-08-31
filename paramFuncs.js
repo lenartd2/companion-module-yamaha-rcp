@@ -1,4 +1,52 @@
 module.exports = {
+	isLevel: (rcpCmd) => {
+		return (
+			rcpCmd !== undefined &&
+			rcpCmd.Type == 'integer' &&
+			rcpCmd.Unit == 'dB' &&
+			parseInt(rcpCmd.Min) <= -32768 &&
+			parseInt(rcpCmd.Max) == 1000 &&
+			parseInt(rcpCmd.Scale) == 100 &&
+			rcpCmd.Address.endsWith('/Level')
+		)
+	},
+
+	isFaderLevel: (rcpCmd) => {
+		return module.exports.isLevel(rcpCmd) && rcpCmd.Address.includes('/Fader/Level')
+	},
+
+	isSceneRecall: (rcpCmd) => {
+		return rcpCmd !== undefined && rcpCmd.Index >= 1000 && rcpCmd.Index < 2000 && rcpCmd.Index != 1001
+	},
+
+	// Index 1001 is the scene *store* command (ssupdate_ex) - overwrites a scene on the console with
+	// no confirmation and no undo (C8). Distinct from isSceneRecall, which explicitly excludes it.
+	isSceneStore: (rcpCmd) => {
+		return rcpCmd !== undefined && rcpCmd.Index == 1001
+	},
+
+	getBaseVariableName: (rcpCmd) => {
+		return `V_${rcpCmd.Address.slice(rcpCmd.Address.indexOf('/') + 1).replace(/\//g, '_')}`
+	},
+
+	// The name variables.js's fbCreatesVar actually gives an auto-created variable when a feedback
+	// with "Auto-Create Variable" fires, as a shared helper. Callers that need to predict this name
+	// ahead of time (e.g. createPresets()'s meter buttons) must use this exact formula or the
+	// prediction silently drifts from what actually gets created - found while fixing C6, see
+	// PLAN.md's Phase 4 writeup.
+	getAutoVariableName: (rcpCmd, x, y) => {
+		let varName = module.exports.getBaseVariableName(rcpCmd)
+		varName = varName + (x ? `_${x}` : '')
+		varName = varName + (y ? `_${y}` : '')
+		return varName
+	},
+
+	// setVariableDefinitions now expects an object keyed by variableId rather than an array;
+	// instance.variables stays an array internally since it's built up with push()/find().
+	setVariableDefinitions: (instance) => {
+		instance.setVariableDefinitions(Object.fromEntries(instance.variables.map((v) => [v.variableId, { name: v.name }])))
+	},
+
 	makeChNames: (r) => {
 		for (let i = 1; i <= 288; i++) {
 			r.chNames.push({ id: i, label: `CH${i}` })
@@ -39,8 +87,7 @@ module.exports = {
 				fname = 'TIO Parameters-1.txt'
 				break
 			case 'RSIO':
-					fname = 'RSio Parameters-1.txt'
-	
+				fname = 'RSio Parameters-1.txt'
 		}
 
 		// Read the DataFile
@@ -64,6 +111,18 @@ module.exports = {
 					cmd.Type = 'bool'
 				}
 			})
+
+			// §7.4: findRcpCmd() was a linear scan doing a fresh .replace() per candidate on every
+			// receive/send - up to 177 allocations per lookup on DM3, far more on Rivage (1000+ rows).
+			// Build the O(1) exact-match index once here; first array occurrence wins on a duplicate
+			// key, matching what .find() would have returned.
+			instance.rcpCommandMap = new Map()
+			for (const cmd of rcpCmds) {
+				const key = cmd.Address.replace(/:/g, '_')
+				if (!instance.rcpCommandMap.has(key)) {
+					instance.rcpCommandMap.set(key, cmd)
+				}
+			}
 		}
 		return rcpCmds
 	},
@@ -108,13 +167,20 @@ module.exports = {
 		const RCP_SCNINFO_FIELDS = ['Status', 'Action', 'Address', 'Val', 'TxtVal', 'ScnName', 'ScnComment', 'ScnType']
 		const RCP_METER_FIELDS = ['Status', 'Action', 'Address', 'Name']
 		let cmds = []
-		let line = []
 		const lines = data.toString().split('\x0A')
 
 		for (let i = 0; i < lines.length; i++) {
 			// I'm not going to even try to explain this next line,
 			// but it basically pulls out the space-separated values, except for spaces that are inside quotes!
-			line = lines[i].match(/(?:[^\s"]+|"[^"]*")+/g)
+			let line = lines[i].match(/(?:[^\s"]+|"[^"]*")+/g)
+
+			// C0: 23 InputChLink rows in the shipped DM3 table are missing their leading "OK" token
+			// (space-indented to the same width instead) - confirmed unique to that one file, a data
+			// typo rather than anything the console itself ever sends. Restore the implicit token so
+			// these parse like every other row instead of being silently dropped by the guard below.
+			if (line !== null && line.length > 0 && ['prminfo', 'mtrinfo'].includes(line[0])) {
+				line.unshift('OK')
+			}
 
 			if (line !== null && line.length > 1 && ['OK', 'OKM', 'NOTIFY'].indexOf(line[0].toUpperCase()) !== -1) {
 				let rcpCommand = {}
@@ -153,8 +219,13 @@ module.exports = {
 						break
 
 					case 'mtr':
-						params = RCP_METER_FIELDS
-						for (k = 3; k < line.length; k++) {
+						// Copy, don't mutate RCP_METER_FIELDS itself (C5) - harmless today only because
+						// every call site happens to invoke parseData() one line at a time, so this
+						// array is never reused across more than one 'mtr' line, but the append-in-place
+						// pattern would silently accumulate duplicate entries the moment that stopped
+						// being true (e.g. batch-processing a chunk of lines in one call).
+						params = [...RCP_METER_FIELDS]
+						for (let k = 3; k < line.length; k++) {
 							params.push(k - 3)
 						}
 				}
@@ -170,11 +241,11 @@ module.exports = {
 	},
 
 	// Create the proper command string to send to the device
-	fmtCmd: (cmdToFmt) => {
+	fmtCmd: (instance, cmdToFmt) => {
 		if (cmdToFmt == undefined) return
 
 		let cmdName = cmdToFmt.Address
-		let rcpCmd = module.exports.findRcpCmd(cmdName)
+		let rcpCmd = module.exports.findRcpCmd(instance, cmdName)
 		let prefix = cmdToFmt.prefix
 		let cmdStart = prefix
 		let options = { X: cmdToFmt.X, Y: cmdToFmt.Y, Val: cmdToFmt.Val }
@@ -182,7 +253,7 @@ module.exports = {
 		if (rcpCmd.Index >= 1000 && rcpCmd.Index < 1010) {
 			cmdStart = prefix == 'set' ? 'ssrecall' : 'sscurrent'
 			if (rcpCmd.Index == 1001) cmdStart = 'ssupdate' // store command
-			switch (config.model) {
+			switch (instance.config.model) {
 				case 'TF':
 				case 'DM3':
 					cmdStart = cmdStart + '_ex'
@@ -209,22 +280,22 @@ module.exports = {
 			cmdStart = 'event'
 			cmdName = cmdName.replace('/Bank', '') // Remove "Bank" from command
 			options.X = ''
-			options.Y = (config.model == 'DM7') ? `scene_${options.Y == 0 ? 'a' : 'b'}` : ''
+			options.Y = instance.config.model == 'DM7' ? `scene_${options.Y == 0 ? 'a' : 'b'}` : ''
 		}
 
 		if (rcpCmd.Index >= 2000) {
 			// Meters
-			if (!config.metering) return
+			if (!instance.config.metering) return
 			cmdStart = 'mtrstart'
 			cmdName = cmdName.replace('/Meter', '') // Remove "Meter" from the beginning of the command
-			if (config.model == 'TIO' || config.model == 'RIO' || config.model == 'RSIO') {
+			if (['TIO', 'RIO', 'RSIO'].includes(instance.config.model)) {
 				cmdName = cmdName.replace(/\/.*Ch/, '/Dev')
 			}
 			if (rcpCmd.Pickoff) {
 				let pickoffs = rcpCmd.Pickoff.split('|')
 				cmdName += '/' + pickoffs[options.Y] // Add the Pickoff Parameter
 			}
-			options.X = config.meterSpeed
+			options.X = instance.config.meterSpeed
 			options.Y = ''
 		}
 
@@ -242,20 +313,23 @@ module.exports = {
 	},
 
 	// Create the proper command string for an action or feedback
+	// Variable/expression substitution now happens in Companion itself (useVariables on the option
+	// fields) before this runs, so there is no longer any IPC round-trip here.
 	parseOptions: async (context, optionsToParse) => {
 		try {
-			let parsedOptions = JSON.parse(JSON.stringify(optionsToParse)) // Deep Clone
+			// §7.7: optionsToParse is a Companion action/feedback options object - every declared
+			// option field yields one scalar value (string/number/boolean), so a shallow copy is
+			// exactly equivalent to a deep clone here and much cheaper on a path that runs on every
+			// action fire and every feedback check.
+			let parsedOptions = { ...optionsToParse }
 
-			parsedOptions.X =
-				optionsToParse.X == undefined ? 0 : parseInt(await context.parseVariablesInString(String(optionsToParse.X))) - 1
-			parsedOptions.Y =
-				optionsToParse.Y == undefined ? 0 : parseInt(await context.parseVariablesInString(String(optionsToParse.Y))) - 1
+			parsedOptions.X = optionsToParse.X == undefined ? 0 : parseInt(optionsToParse.X) - 1
+			parsedOptions.Y = optionsToParse.Y == undefined ? 0 : parseInt(optionsToParse.Y) - 1
 
 			if (!Number.isInteger(parsedOptions.X) || !Number.isInteger(parsedOptions.Y)) return // Don't go any further if not Integers for X & Y
 			parsedOptions.X = Math.max(parsedOptions.X, 0)
 			parsedOptions.Y = Math.max(parsedOptions.Y, 0)
-			parsedOptions.Val = await context.parseVariablesInString(String(optionsToParse.Val ?? ''))
-			parsedOptions.Val = parsedOptions.Val === undefined ? '' : parsedOptions.Val
+			parsedOptions.Val = optionsToParse.Val === undefined ? '' : optionsToParse.Val
 
 			return parsedOptions
 		} catch (error) {
@@ -269,10 +343,12 @@ module.exports = {
 		}
 	},
 
-	parseVal: (context, cmd) => {
+	// `instance` must be the real module instance, not a Companion callback context - it needs
+	// instance.config/instance.rcpCommands (via findRcpCmd) and instance.getFromDataStore.
+	parseVal: (instance, cmd) => {
 		const hpf = require('./hpf')
 		let val = cmd.Val
-		let rcpCmd = module.exports.findRcpCmd(cmd.Address)
+		let rcpCmd = module.exports.findRcpCmd(instance, cmd.Address)
 
 		if (rcpCmd.Type == 'string' || rcpCmd.Type == 'binary') {
 			return val
@@ -295,7 +371,7 @@ module.exports = {
 
 		if (!module.exports.isRelAction(cmd)) return val //Only continue if it's a relative action
 
-		let data = context.getFromDataStore(cmd)
+		let data = instance.getFromDataStore(cmd)
 		if (data === undefined) return undefined
 
 		let curVal = parseInt(data)
@@ -322,16 +398,28 @@ module.exports = {
 		return val
 	},
 
-	findRcpCmd: (cmdName, cmdAction = '') => {
+	// `instance` needs instance.config and instance.rcpCommands - see C1 in PLAN.md: these used to
+	// be `global.config`/`global.rcpCommands`, which meant a second configured instance (a DM3 plus
+	// a Rio stagebox, say) would silently clobber the first's state.
+	findRcpCmd: (instance, cmdName, cmdAction = '') => {
 		let rcpCmd = undefined
 		if (cmdName != undefined) {
-			if (cmdAction == 'mtr') {
+			if (cmdAction == 'mtr' && instance.config.model != 'DM3') {
+				// C6/PLAN.md §4.5: every model except DM3 (currently) ships a synthesised meter table
+				// that collapses several real per-pickoff addresses into one generic row plus a
+				// Pickoff column, e.g. "MIXER:Current/Meter/InCh" covering
+				// PreHPF/PreFader/PostOn. The wire address for an actual meter value carries the real
+				// pickoff as its last segment (e.g. ".../InCh/PreHPF") - insert the invented "Meter/"
+				// segment and strip that last segment back off to match the synthesised row's address.
+				// DM3's table now has the console's own real, flat, one-address-per-pickoff rows
+				// (fixed as part of this same bug, see the mtrinfo rows in "DM3 Parameters-2.txt") and
+				// needs no rewriting at all - the wire address already matches a row's Address exactly.
 				cmdName = cmdName.replace('Current/', 'Current/Meter/')
 
-				if (config.model == 'TIO' || config.model == 'RIO') {
+				if (instance.config.model == 'TIO' || instance.config.model == 'RIO') {
 					cmdName = cmdName.replace('/Dev/OutputLevel', '/OutCh/OutputLevel')
-					cmdName = cmdName.replace(/\/Dev.*/, config.model == 'TIO' ? '/InCh/InputLevel' : '/InCh')
-				} else if (config.model == 'RSIO') {
+					cmdName = cmdName.replace(/\/Dev.*/, instance.config.model == 'TIO' ? '/InCh/InputLevel' : '/InCh')
+				} else if (instance.config.model == 'RSIO') {
 					cmdName = cmdName.replace('/Dev', cmdName.includes('InputLevel') ? '/InCh' : '/OutCh')
 				} else {
 					let lastSlash = cmdName.lastIndexOf('/')
@@ -339,7 +427,13 @@ module.exports = {
 				}
 			}
 			let cmdToFind = cmdName.replace(/:/g, '_')
-			rcpCmd = rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
+			// §7.4: O(1) exact-address fast path, built once in getParams(). Falls back to the linear
+			// prefix scan for the 'mtr' rewrites above, which on some models truncate cmdName to a
+			// genuine (shorter, not exact) prefix of the stored Address rather than the full thing.
+			rcpCmd = instance.rcpCommandMap?.get(cmdToFind)
+			if (rcpCmd === undefined) {
+				rcpCmd = instance.rcpCommands.find((cmd) => cmd.Address.replace(/:/g, '_').startsWith(cmdToFind))
+			}
 		}
 		return rcpCmd
 	},
