@@ -1265,7 +1265,7 @@ class instance extends InstanceBase {
 
 			// 'Meter', 'LevelMeter' and 'CurrentScene' are hand-authored feedbacks, not derived from a
 			// parameter row - findRcpCmd won't (and shouldn't) resolve them, so leave their options alone.
-			const rcpCmd = paramFuncs.findRcpCmd(id)
+			const rcpCmd = paramFuncs.findRcpCmd(this, id)
 			const declared = rcpCmd
 				? new Set(
 						(isFeedback
