@@ -26,7 +26,7 @@ an assumption, it says so.
 5. [What the DM3 exposes — and what it doesn't](#5-what-the-dm3-exposes--and-what-it-doesnt)
 6. [The module: architecture walkthrough](#6-the-module-architecture-walkthrough)
 7. [Findings: performance](#7-findings-performance)
-8. [Findings: correctness](#8-findings-correctness)
+8. [Findings: correctness](#8-findings-correctness) — incl. [8.1 maintainer review of PR #76](#81-maintainer-review-of-pr-76--four-points-unanswered)
 9. [Plan of work](#9-plan-of-work)
 10. [Build, install, test](#10-build-install-test)
 11. [Paths and reference material](#11-paths-and-reference-material)
@@ -525,7 +525,7 @@ Diffed against the shipped `DM3 Parameters-2.txt`:
 | | Count |
 |---|---|
 | On console, module has it and uses it | 151 |
-| On console, module ships it but **silently drops it** | **23** — see [C0](#8-findings-correctness) |
+| On console, module ships it but **deliberately disables it** | **23** — see [C0](#8-findings-correctness) |
 | On console, module **lacks entirely** | **3** — see [§5.3](#53-the-dante-remote-ha-caveat) |
 | In module, not on console | 0 |
 
@@ -651,8 +651,9 @@ the selected console and every row becomes:
 - a **feedback**, if `RW` contains `r` — via `feedbacks.createFeedbackFromAction()`, which literally
   deep-clones the action and swaps the callback
 
-So adding a parameter means adding a table row, not writing code. That's why C0 (23 rows silently
-dropped by the parser) costs 23 whole features for a one-line bug, and why [§5](#5-what-the-dm3-exposes--and-what-it-doesnt)
+So adding a parameter means adding a table row, not writing code. **A row whose first token is
+blank rather than `OK` is deliberately disabled** — that is the author's mechanism for keeping the
+action list to a manageable size (see C0/§8.1), not a parsing accident. It is also why [§5](#5-what-the-dm3-exposes--and-what-it-doesnt)
 matters so much — the table can only contain what the console admits to.
 
 ### 6.4 Data flow
@@ -844,7 +845,7 @@ verified.
 
 | # | Issue | Location / evidence |
 |---|---|---|
-| **C0** | **23 shipped DM3 parameters are silently dead.** Lines 123–145 of `DM3 Parameters-2.txt` (indices 122–144 — the entire `InputChLink` block) are missing their leading `OK ` and are space-indented. `parseData`'s guard is `['OK','OKM','NOTIFY'].indexOf(line[0].toUpperCase()) !== -1`, so the first token is `prminfo` and every one of those rows is dropped. They exist in the file, they exist on the console, the module cannot see them. **One-line parser fix unlocks 23 parameters.** | confirmed by diffing the live dump against the shipped table |
+| **C0** | ~~**23 shipped DM3 parameters are silently dead** — a parser bug.~~ **NOT A BUG — corrected by the upstream maintainer, 2026-08-31 (§8.1).** The blank-vs-`OK` prefix on lines 123–145 of `DM3 Parameters-2.txt` (the `InputChLink` block) is a **deliberate enable/disable switch**: *"a conscious choice to not include linking commands to keep the # of actions to a palatable size. Any command can be enabled or disabled by changing the blank to `OK` or vice versa."* Our observation was right — those 23 rows exist on the console and produced no actions — but the **cause was misattributed**. Our change enables 23 intentionally-disabled actions. That is a product decision, fine for this studio, **not a correctness fix**, and upstream may well decline it. | maintainer, [PR #76](https://github.com/bitfocus/companion-module-yamaha-rcp/pull/76) |
 | **C1** | **Module state is global, not per-instance.** `global.config` and `global.rcpCommands` ([`index.js:28-29`](companion-module-yamaha-rcp/index.js:28)) are read throughout `paramFuncs`, `actions`, `variables`. A second instance — DM3 plus a Rio stagebox, or a redundant console — silently clobbers the first. | `index.js:28`, and ~15 further `global.rcpCommands` reads |
 | **C2** | **KeepAlive timer leaks on destroy.** [`destroy()`](companion-module-yamaha-rcp/index.js:53) clears `queueTimer`, the fade timers and `meterTimer` — but never `kaTimer`, which is created at [`index.js:243`](companion-module-yamaha-rcp/index.js:243). It keeps firing `devstatus runmode` after the instance is deleted. | `index.js:53-62` |
 | **C3** | **User input goes straight into `JSON.parse`.** [`actions.js:223,227`](companion-module-yamaha-rcp/actions.js:223) parse the X and Y option values as JSON to support array syntax. Any non-JSON value throws inside the action callback and the action silently does nothing. Riskier on API 2.1, where option values are no longer coerced to strings. | `actions.js:223` |
@@ -854,6 +855,63 @@ verified.
 | **C7** | **No reconnect/backoff of its own**, and connection errors flood the Companion log. | upstream [#57](https://github.com/bitfocus/companion-module-yamaha-rcp/issues/57) |
 | **C8** | **Scene Store has no confirmation** and silently overwrites. The README says so outright: *"use with caution! — There's NO confirmation when storing or overwriting a scene"*. With 12 hand-built studio scenes on this console (§2.3) that's a real hazard. | `README.md` |
 | **C9** | **The TCP receive handler's two line-reassembly branches are swapped, silently corrupting a line whenever a chunk boundary falls mid-line.** [`index.js`](companion-module-yamaha-rcp/index.js)'s `socket.on('data', ...)` splits the accumulated buffer on `\n`; when the chunk does *not* end on a line boundary (meaning the last split element is a genuinely incomplete line, the rest still in flight over the wire) the code clears the buffer and lets that incomplete fragment get parsed as if it were complete — instead of holding it for the next chunk, which is what the *other* branch (chunk *does* end on a boundary, where the trailing element is always just an empty string) does. Not new to this project — inherited from the original code, invisible under light/spaced-out traffic (most chunks happen to land on a line boundary), and only reliably reproducible under a heavy rapid-line stream, e.g. several concurrent `mtrstart` subscriptions. **Found via an intermittent, one-off crash during Phase 4 live testing (`variables.js`'s `setVar`, `msg.Address` undefined) that never reproduced on a quiet connection.** Fixed 2026-08-28: swapped the two branches back to their evidently-intended roles, plus a defensive guard in `setVar`'s `default` case so any other malformed-line edge case degrades to "drop that one line" instead of crashing the connection. | found investigating a background-task-flagged crash; reproduced and fixed without live hardware — a local loopback TCP server standing in for the console, deliberately splitting a response across two writes mid-line, proved the old code silently lost the value entirely (not even a crash, worse: silent data loss) and the fixed code reassembles it correctly |
+
+### 8.1 Maintainer review of PR #76 — four points, unanswered
+
+Andrew Broughton (`MeestorX`) reviewed the upstream PR on **2026-08-31** and raised four points.
+**None have been answered.** Recorded here because they are real corrections and real questions,
+and because the answers are mostly already in this document.
+
+**1. C0 is not a bug — he's right, and we were wrong.**
+
+> *"Not a bug, a conscious choice to not include linking commands to keep the # of actions to a
+> palatable size. Any command can be enabled or disabled by changing the blank to `OK` or vice
+> versa."*
+
+The blank prefix is a **feature of the file format**, not a parsing oversight. Our diff was
+accurate (those 23 rows are on the console and produced no actions) but we misread *why*. C0 is
+reclassified above. Nothing to argue here — the framing in the PR should be corrected.
+
+**2. Scene-recall resync — he suspects it can't work.**
+
+> *"This might not work, I'll have to do some testing. The module doesn't know what values changed
+> after a scene recall until it requests them."*
+
+**This looks like a misreading that's easy to clear up.** He's right that the console never says
+what changed — and our change doesn't assume otherwise. It still re-requests *everything*
+(§7.2); what it stops doing is **wiping the cache first**, so an arriving value can be compared
+against the previous one and only *actually changed* addresses trigger a feedback re-check. Same
+network traffic, same knowledge, fewer re-evaluations. It also fixes upstream
+[#44](https://github.com/bitfocus/companion-module-yamaha-rcp/issues/44)'s spurious trigger fires,
+which is the user-visible symptom of the wipe.
+
+**3. Metering — he's seen no problem and had no reports.**
+
+> *"I found no issues with the metering on 3.5.13, and none were ever reported by anyone. What
+> specific problem(s) did you observe that required changing the metering code?"*
+
+**There is a direct answer: upstream [#45](https://github.com/bitfocus/companion-module-yamaha-rcp/issues/45),
+"Metering issues with Yamaha DM3" — which he replied to himself.** It reports exactly the
+symptoms we found: `Meter/St` returning left only, `Meter/StInCh` returning nothing, `Meter/FxRtnCh`
+always reading channel 1. Our contribution is the *root cause*: the shipped table synthesises 6
+collapsed rows with a `Pickoff` column, while the console enumerates **17 flat per-pickoff
+addresses** (§4.5) — the axes are transposed. `tools/probes/DM3-V3.00-live.txt` has the live
+`mtrinfo` sweep that shows it. The second bug found while diagnosing (preset meter variable names
+never matching what `fbCreatesVar` generates, affecting **every** model) is independent and may be
+the more interesting one for him.
+
+**4. Auto-populated variables — he asks what they're for.**
+
+> *"What is this for?"*
+
+Button labels that track the console without hand-wiring. Before the change, the only way to get a
+channel's name or level into a label was to place a feedback with "Auto-Create Variable" ticked on
+some button — so a label needs a feedback that exists purely to create a variable. After it, every
+fader-level channel's name/level/on-state exists on connect. Reasonable for him to push back on
+scope (~90 variables on a DM3) — a config toggle would be an easy concession.
+
+**Status:** the studio deployment does not depend on any of this. Answering is optional and
+entirely the operator's call — see §12.
 
 ---
 
@@ -959,7 +1017,8 @@ DM3 — §10.4's manual test list is still the real gate.
 
 ### Phase 2 — Correctness and safety — **DONE (code), pending one live check**
 
-C0 first — it's a one-line parser fix that unlocks the entire `InputChLink` block. Then C1–C5, C7.
+C0 first — one guard clause enables the entire `InputChLink` block (a scope choice, not a bug fix
+— see §8.1). Then C1–C5, C7.
 C1 (de-globalising) is the largest diff and unblocks running a console and a stagebox side by side.
 
 **Exit:** two instances configured simultaneously without interference; `InputChLink` actions appear
@@ -967,9 +1026,11 @@ in the UI; no leaked timers; `eslint` clean.
 
 **Closed 2026-08-27:**
 
-- **C0** — the parser silently dropped 23 `InputChLink` rows (missing their leading `OK` token,
-  space-indented instead). One guard clause restores it. Verified directly: 161 → 184 parsed
-  commands, all 23 confirmed present in the generated action set.
+- **C0** — enabled the 23 `InputChLink` rows the parser had been skipping (they carry a blank
+  prefix instead of `OK`). One guard clause. Verified directly: 161 → 184 parsed commands, all 23
+  confirmed present in the generated action set. **⚠️ Reclassified 2026-08-31:** the maintainer
+  confirmed the blank prefix is a deliberate on/off switch, not an oversight — so this is a
+  deliberate scope change (more actions in the UI), not a bug fix. See §8.1.
 - **C1** — `global.config`/`global.rcpCommands` moved onto the instance
   (`this.config`/`this.rcpCommands`); `findRcpCmd`, `fmtCmd`, and the fade-limit helpers all gained
   an `instance` parameter, threaded through every call site across all 6 files. Verified directly:
