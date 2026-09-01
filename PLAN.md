@@ -4,6 +4,15 @@
 Everything here is either measured against the live console or cited to source. Where something is
 an assumption, it says so.
 
+> **Project status: CLOSED, 2026-09-01 — live-tested and approved by the studio operator.**
+> Shipped as `v3.12.2` on branch `broadcast-studio`. Every phase's exit checklist is confirmed
+> against the real console (§10.4), the per-channel scope freeze (§1.1) means there's no more
+> module feature work planned, and remaining open items (§12) are studio configuration calls, not
+> module bugs. This closes the studio deployment side of the project. **The upstream contribution,
+> [bitfocus/companion-module-yamaha-rcp#76](https://github.com/bitfocus/companion-module-yamaha-rcp/pull/76),
+> is a separate, still-open thread** — pending the maintainer's own review of his independent,
+> in-flight API 2 migration — and isn't affected by this closure.
+
 ---
 
 ## Contents

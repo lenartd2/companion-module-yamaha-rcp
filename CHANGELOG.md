@@ -3,6 +3,21 @@
 All notable changes to this module are documented here. See [PLAN.md](PLAN.md) for the full
 research and rationale behind each change.
 
+## [3.12.2] - 2026-09-01
+
+### Fixed
+
+- **Preset option-filtering was a silent no-op since it shipped in Phase 1.**
+  `createPresets()`'s `getDeclaredOptionIds()` called `findRcpCmd(id)` instead of
+  `findRcpCmd(this, id)` — since C1 added the required `instance` argument, this always returned
+  `undefined` without ever throwing, so every preset kept shipping every option key regardless of
+  what its target actually declares. This is exactly the "unknown option key" warning the feature
+  was built to suppress. Found while reconstructing the upstream contribution onto 3.5.13; fixed
+  here too. Verified via `yarn lint`, a clean build, and the existing smoke test (identical preset/
+  action/feedback counts — the fix changes what happens inside the filter, not whether presets
+  generate). Not separately re-confirmed against a live Companion install; low-risk since it only
+  affects which option keys Companion logs warnings about, not control behavior.
+
 ## [3.12.1] - 2026-08-28
 
 Narrows Exclusive Mic Mode's default channel list from v3.12.0's `1,2,3,4,5,6,15,16` to `3,4`.
